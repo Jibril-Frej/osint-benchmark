@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import shutil
 import tomllib
+import urllib.error
 import urllib.request
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
@@ -34,6 +35,8 @@ from osint_benchmark.artifacts import (
 from osint_benchmark.schema import Document
 
 HASH_CHUNK = 1 << 20
+HTTP_PARTIAL_CONTENT = 206
+HTTP_RANGE_NOT_SATISFIABLE = 416
 
 
 class SourceUnavailable(RuntimeError):
@@ -160,8 +163,9 @@ def fetch(source: Source, raw_dir: Path | None = None, *, check_hash: bool = Tru
     """Ensure every raw file for a source is present and matches its pin.
 
     A file already on disk is never re-downloaded, so pointing ``OSINT_RAW`` at an
-    existing copy of the corpora costs nothing. A source whose pin carries no URL — one
-    that cannot be redistributed — reports how to obtain the file instead of failing
+    existing copy of the corpora costs nothing, and an interrupted download resumes from
+    where it stopped rather than starting over. A source whose pin carries no URL — one
+    that cannot be fetched unattended — reports how to obtain the file instead of failing
     silently.
 
     Raises:
@@ -174,10 +178,10 @@ def fetch(source: Source, raw_dir: Path | None = None, *, check_hash: bool = Tru
         if not dest.exists():
             if not origin.url:
                 raise SourceUnavailable(
-                    f"{source.name}: {dest} is missing and is not redistributed.\n{origin.note}"
+                    f"{source.name}: {dest} is missing and cannot be fetched.\n{origin.note}"
                 )
             dest.parent.mkdir(parents=True, exist_ok=True)
-            _download(origin.url, dest)
+            _download(origin.url, dest, origin.size)
         _check_raw(source, origin, dest, check_hash=check_hash)
         paths.append(dest)
     return paths
@@ -240,15 +244,47 @@ def verify(
     )
 
 
-def _download(url: str, dest: Path) -> None:
-    """Stream a URL to disk, via a partial file so an interrupted run leaves no half-file.
+def _download(url: str, dest: Path, expected_size: int | None = None) -> None:
+    """Stream a URL into ``<dest>.part`` and rename it only once the transfer completes.
 
-    There is no resume yet. The first source that needs one is Wikipedia, whose dump is
-    25 GB; adding it before then would be untested code.
+    An interrupted download is resumed from where it stopped rather than restarted: the
+    partial file's size becomes a ``Range`` request. This matters because the corpora are
+    large — the enwiki dump is 25 GB, forty minutes of transfer on a good link — and a
+    connection dropped near the end would otherwise cost the whole thing.
+
+    Resuming is only safe because :func:`_check_raw` hashes the result afterwards. Two
+    ways a resumed file can be wrong are caught there and nowhere else: a server that
+    ignores ``Range`` and replies 200 with the whole body (handled here by restarting
+    rather than appending), and a stale partial left over from a different version of the
+    file, which would resume into a seam of two different downloads.
     """
     partial = dest.with_name(dest.name + ".part")
-    with urllib.request.urlopen(url) as response, partial.open("wb") as handle:  # noqa: S310
-        shutil.copyfileobj(response, handle)
+    have = partial.stat().st_size if partial.exists() else 0
+    # A partial already at or past the pinned length is not a resumable download, it is a
+    # leftover from a different file. Asking for bytes past the end would earn a 416.
+    if expected_size is not None and have >= expected_size:
+        have = 0
+
+    request = urllib.request.Request(url)
+    if have:
+        request.add_header("Range", f"bytes={have}-")
+
+    try:
+        response = urllib.request.urlopen(request)  # noqa: S310
+    except urllib.error.HTTPError as exc:
+        if have and exc.code == HTTP_RANGE_NOT_SATISFIABLE:
+            # The partial does not belong to this file. Drop it and start over.
+            partial.unlink(missing_ok=True)
+            _download(url, dest, expected_size)
+            return
+        raise
+
+    with response:
+        # 206 means the server honoured the range and is sending only the remainder.
+        # Anything else is the whole file, so appending would splice two copies together.
+        resuming = have > 0 and response.status == HTTP_PARTIAL_CONTENT
+        with partial.open("ab" if resuming else "wb") as handle:
+            shutil.copyfileobj(response, handle)
     partial.replace(dest)
 
 
