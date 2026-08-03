@@ -24,12 +24,11 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from osint_benchmark import config
+from osint_benchmark import paths
 from osint_benchmark.artifacts import (
     Provenance,
     canonical,
     read_jsonl,
-    record_hash,
     write_records,
 )
 
@@ -99,6 +98,9 @@ class Source:
         acquire: Set only when the source is not a set of files to download — the
             parliamentary record is a paged API, so it fetches itself. Returns the raw
             paths it wrote.
+        compress: Write the parsed output gzipped. Set for sources large enough that the
+            plain form is not worth keeping: GDELT is 78 GB uncompressed and 6.2 GB
+            gzipped.
     """
 
     name: str
@@ -106,33 +108,44 @@ class Source:
     parse: Callable[[Path], Iterator[dict]]
     projection: Projection
     acquire: Callable[[Path], list[Path]] | None = None
+    compress: bool = False
+
+
+@dataclass(frozen=True)
+class Fingerprint:
+    """What a built corpus hashes to, and how many records it holds."""
+
+    sha256: str
+    records: int
+
+    def to_toml_value(self) -> str:
+        """Return the one-line form recorded in ``pins/corpora.toml``."""
+        return f'{{ sha256 = "{self.sha256}", records = {self.records} }}'
 
 
 @dataclass(frozen=True)
 class VerifyReport:
-    """The outcome of checking built documents against the committed hashes."""
+    """The outcome of checking a built corpus against its published fingerprint."""
 
     source: str
-    checked: int = 0
-    changed: tuple[str, ...] = ()
-    missing: tuple[str, ...] = ()
-    unexpected: tuple[str, ...] = ()
-    baseline_missing: bool = False
+    built: Fingerprint
+    expected: Fingerprint | None = None
 
     @property
     def ok(self) -> bool:
-        """True when nothing contradicts the published hashes."""
-        return not (self.changed or self.missing or self.unexpected)
+        """True when nothing contradicts the published fingerprint."""
+        return self.expected is None or self.built == self.expected
 
     def summary(self) -> str:
         """Return a one-line human summary."""
-        if self.baseline_missing:
-            return f"{self.source}: {self.checked} documents built, no published hashes to check"
+        if self.expected is None:
+            return f"{self.source}: {self.built.records} records, no published fingerprint to check"
         if self.ok:
-            return f"{self.source}: {self.checked} documents match the pinned hashes"
+            return f"{self.source}: {self.built.records} records match the published fingerprint"
         return (
-            f"{self.source}: {len(self.changed)} changed, {len(self.missing)} missing, "
-            f"{len(self.unexpected)} unexpected (of {self.checked} pinned)"
+            f"{self.source}: MISMATCH -- built {self.built.records} records "
+            f"({self.built.sha256[:12]}), published {self.expected.records} "
+            f"({self.expected.sha256[:12]})"
         )
 
 
@@ -142,7 +155,7 @@ def load_origins(name: str, pins_file: Path | None = None) -> tuple[Origin, ...]
     Raises:
         KeyError: If the source has no entry in ``pins/sources.toml``.
     """
-    path = pins_file or (config.pins_dir() / "sources.toml")
+    path = pins_file or (paths.pins_dir() / "sources.toml")
     pins = tomllib.loads(path.read_text(encoding="utf-8"))
     if name not in pins:
         raise KeyError(f"{name!r} has no entry in {path}")
@@ -160,7 +173,7 @@ def file_hash(path: Path) -> str:
 
 def raw_path(source: Source, origin: Origin, raw_dir: Path | None = None) -> Path:
     """Return where one of a source's raw files belongs on disk."""
-    return (raw_dir or config.raw_dir()) / source.name / origin.filename
+    return (raw_dir or paths.raw_dir()) / source.name / origin.filename
 
 
 def fetch(source: Source, raw_dir: Path | None = None) -> list[Path]:
@@ -177,9 +190,9 @@ def fetch(source: Source, raw_dir: Path | None = None) -> list[Path]:
             does not match its pinned size or checksum.
     """
     if source.acquire is not None:
-        return source.acquire((raw_dir or config.raw_dir()) / source.name)
+        return source.acquire((raw_dir or paths.raw_dir()) / source.name)
 
-    paths = []
+    fetched = []
     for origin in load_origins(source.name):
         dest = raw_path(source, origin, raw_dir)
         if not dest.exists():
@@ -190,98 +203,107 @@ def fetch(source: Source, raw_dir: Path | None = None) -> list[Path]:
             dest.parent.mkdir(parents=True, exist_ok=True)
             _download(origin.url, dest, origin.size)
         _check_raw(source, origin, dest)
-        paths.append(dest)
-    return paths
+        fetched.append(dest)
+    return fetched
+
+
+def output_path(source: Source, docs_dir: Path | None = None) -> Path:
+    """Return where a source's parsed records land."""
+    suffix = ".jsonl.gz" if source.compress else ".jsonl"
+    return (docs_dir or paths.docs_dir()) / f"{source.name}{suffix}"
 
 
 def parse(source: Source, raw_dir: Path | None = None, docs_dir: Path | None = None) -> Path:
     """Parse a source's raw files into ``<docs>/<name>.jsonl`` and return that path."""
-    output = (docs_dir or config.docs_dir()) / f"{source.name}.jsonl"
+    output = output_path(source, docs_dir)
     write_records(
         output,
-        source.parse(raw_dir or config.raw_dir()),
+        source.parse(raw_dir or paths.raw_dir()),
         source.projection.to_provenance(),
     )
     return output
 
 
-def hashes_path(name: str, pins_dir: Path | None = None) -> Path:
-    """Return the committed per-document hash file for a source."""
-    return (pins_dir or config.pins_dir()) / "hashes" / f"{name}.jsonl"
+def fingerprint(source: Source, docs_dir: Path | None = None) -> Fingerprint:
+    """Return the built corpus's fingerprint, computed in one streaming pass.
 
+    Every record's canonical JSON is folded into a single running sha256 and then
+    discarded, so memory stays flat whether the corpus holds 8,000 records or 91 million.
+    Per-record hashes were the first design and did not survive GDELT: they needed 8.7 GB
+    of committed pins and 23 GB of memory for one source, to buy a nicer error message.
 
-def document_hashes(source: Source, docs_dir: Path | None = None) -> dict[str, str]:
-    """Return ``doc_id -> sha256`` for a source's built documents.
-
-    Raises:
-        ValueError: If two records share a ``doc_id``. Keying on it means duplicates
-            would collapse into one entry: the count would understate the corpus, and a
-            later run could lose every copy but one and still verify clean. That is not
-            hypothetical — it hid 8,470 spurious sanctions rows until the counts were
-            compared against the source by hand.
+    Order matters, deliberately. A parser that emits the same records in a different order
+    is a different build, and finding that out is the point.
     """
-    output = (docs_dir or config.docs_dir()) / f"{source.name}.jsonl"
-    hashes: dict[str, str] = {}
-    duplicates: list[str] = []
-    for record in read_jsonl(output):
-        doc_id = record["doc_id"]
-        if doc_id in hashes:
-            duplicates.append(doc_id)
-        hashes[doc_id] = record_hash(record)
-    if duplicates:
-        shown = ", ".join(sorted(set(duplicates))[:5])
-        raise ValueError(
-            f"{source.name}: {len(duplicates)} records repeat a doc_id ({shown}); "
-            "doc_id must be unique within a source"
-        )
-    return hashes
+    digest = hashlib.sha256()
+    records = 0
+    for record in read_jsonl(output_path(source, docs_dir)):
+        digest.update(canonical(record).encode("utf-8"))
+        digest.update(b"\n")
+        records += 1
+    return Fingerprint(sha256=digest.hexdigest(), records=records)
 
 
-def write_hashes(
+def load_fingerprint(name: str, pins_dir: Path | None = None) -> Fingerprint | None:
+    """Return a source's published fingerprint, or None if it has none yet."""
+    path = (pins_dir or paths.pins_dir()) / "corpora.toml"
+    if not path.exists():
+        return None
+    published = tomllib.loads(path.read_text(encoding="utf-8"))
+    if name not in published:
+        return None
+    entry = published[name]
+    return Fingerprint(sha256=entry["sha256"], records=entry["records"])
+
+
+def write_fingerprint(
     source: Source, docs_dir: Path | None = None, pins_dir: Path | None = None
 ) -> Path:
-    """Record the built documents' hashes as the baseline everyone else checks against.
+    """Publish the built corpus's fingerprint, replacing any previous entry.
 
-    Freezing a baseline is part of publishing a release, so this belongs to step 9 and is
-    deliberately not something a run of step 1 can do — the pins a rebuilder verifies
-    against must come from the release, not from their own rebuild.
+    Publishing a fingerprint is part of freezing a release, not of building a corpus: the
+    value a rebuilder checks against has to come from the release, never from their own
+    rebuild.
     """
-    pins_file = hashes_path(source.name, pins_dir)
-    pins_file.parent.mkdir(parents=True, exist_ok=True)
-    with pins_file.open("w", encoding="utf-8") as handle:
-        for doc_id, digest in sorted(document_hashes(source, docs_dir).items()):
-            handle.write(canonical({"doc_id": doc_id, "sha256": digest}) + "\n")
-    return pins_file
+    path = (pins_dir or paths.pins_dir()) / "corpora.toml"
+    built = fingerprint(source, docs_dir)
+    lines = []
+    if path.exists():
+        lines = [
+            line
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if not line.startswith(f"{source.name} =")
+        ]
+    else:
+        lines = [
+            "# What each built corpus hashes to. One line per source: a sha256 over every",
+            "# record in order, and the record count. This is how a rebuilder confirms their",
+            "# corpus is the one the benchmark's answers were written against.",
+            "",
+        ]
+    lines.append(f"{source.name} = {built.to_toml_value()}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8")
+    return path
 
 
 def verify(
     source: Source, docs_dir: Path | None = None, pins_dir: Path | None = None
 ) -> VerifyReport:
-    """Check built documents against the hashes published with the benchmark.
+    """Check a built corpus against the fingerprint published with the benchmark.
 
     This exists because users build the corpora themselves, so a parse regression becomes
     *their* wrong numbers rather than a crash. The failure it is here to catch is real: a
     missing ``escapechar`` in the Cablegate parse cost 68% of the corpus text and produced
     a perfectly well-formed file.
 
-    No published baseline is reported, not treated as a failure: before the first release
-    there is nothing to check against, and a build is not wrong for being the first.
+    No published fingerprint is reported, not treated as a failure: before the first
+    release there is nothing to check against, and a build is not wrong for being first.
     """
-    built = document_hashes(source, docs_dir)
-    pins_file = hashes_path(source.name, pins_dir)
-    if not pins_file.exists():
-        return VerifyReport(source=source.name, checked=len(built), baseline_missing=True)
-
-    pinned = {record["doc_id"]: record["sha256"] for record in read_jsonl(pins_file)}
-    changed = tuple(sorted(k for k, v in pinned.items() if k in built and built[k] != v))
-    missing = tuple(sorted(set(pinned) - set(built)))
-    unexpected = tuple(sorted(set(built) - set(pinned)))
     return VerifyReport(
         source=source.name,
-        checked=len(pinned),
-        changed=changed,
-        missing=missing,
-        unexpected=unexpected,
+        built=fingerprint(source, docs_dir),
+        expected=load_fingerprint(source.name, pins_dir),
     )
 
 

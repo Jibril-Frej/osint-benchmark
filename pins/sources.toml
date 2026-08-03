@@ -54,3 +54,388 @@ archiving the XML that was fetched."""
 # itself (osint_benchmark/sources/parliament.py) and there is nothing to checksum.
 [parliament]
 kind = "public"
+
+[gdelt]
+kind = "public"
+# 63 files: yearly for 2003-2005, monthly for 2006-01 to 2010-12 -- the Cablegate window.
+# GDELT 1.0 event files, tab-separated with 57 columns and no header row. The server sends
+# no Content-Length and ignores Range, so an interrupted download restarts rather than
+# resuming; the largest file is 194 MB, which makes that tolerable.
+
+[[gdelt.origins]]
+filename = "2003.zip"
+url = "http://data.gdeltproject.org/events/2003.zip"
+sha256 = "2a7b31f015134b976726a7b767a52ccf9769e01695e7307d46efe0e018949c1c"
+size = 193990838
+
+[[gdelt.origins]]
+filename = "2004.zip"
+url = "http://data.gdeltproject.org/events/2004.zip"
+sha256 = "2b66bea9c150316d5d7e6f5f6f8fc32e7cdf5fe764ed5472f8d904c117b0c331"
+size = 163638643
+
+[[gdelt.origins]]
+filename = "2005.zip"
+url = "http://data.gdeltproject.org/events/2005.zip"
+sha256 = "ec6542cc72b5ad72932d3dc7145ca200529b75e114ce6f04a36a52b43d14b5cf"
+size = 125894903
+
+[[gdelt.origins]]
+filename = "200601.zip"
+url = "http://data.gdeltproject.org/events/200601.zip"
+sha256 = "73e9d02cfb26e91152e5d76f8cd0077416dfd699d41874f47d4218428d0a240f"
+size = 10975322
+
+[[gdelt.origins]]
+filename = "200602.zip"
+url = "http://data.gdeltproject.org/events/200602.zip"
+sha256 = "d3e27660e98fdaa1bd354ebaa79829eb1074f936f055cbd30d3428284caf4c9f"
+size = 11785774
+
+[[gdelt.origins]]
+filename = "200603.zip"
+url = "http://data.gdeltproject.org/events/200603.zip"
+sha256 = "86afe3ecbd9f8c1a5bf8d30327ac7435dc07a14b1a06113916f8f3d65cdb688a"
+size = 18392764
+
+[[gdelt.origins]]
+filename = "200604.zip"
+url = "http://data.gdeltproject.org/events/200604.zip"
+sha256 = "95f72c398fd33d3eb76e12977382c586e97849499736778e23df1741f12e662d"
+size = 14772353
+
+[[gdelt.origins]]
+filename = "200605.zip"
+url = "http://data.gdeltproject.org/events/200605.zip"
+sha256 = "c783f303b93b799f2464aa97ee115903e3df35040faa5edae9e00d4c936169dc"
+size = 18154885
+
+[[gdelt.origins]]
+filename = "200606.zip"
+url = "http://data.gdeltproject.org/events/200606.zip"
+sha256 = "704d8946333571b0d2b8fd89447cfbb1e3a55a8446c285074cc6cbd7932950ac"
+size = 19713295
+
+[[gdelt.origins]]
+filename = "200607.zip"
+url = "http://data.gdeltproject.org/events/200607.zip"
+sha256 = "0dbb569de60114899c24890f723f42df902044a81b1b22f418d0451eacfcd369"
+size = 21206264
+
+[[gdelt.origins]]
+filename = "200608.zip"
+url = "http://data.gdeltproject.org/events/200608.zip"
+sha256 = "5c797588cee2ede53e3f0da6a874db0f2f2d8f6d69577225f1179c569ba258a7"
+size = 23684961
+
+[[gdelt.origins]]
+filename = "200609.zip"
+url = "http://data.gdeltproject.org/events/200609.zip"
+sha256 = "e609c8a51a8867fd65311ff1f6b4b1c3efa70105d14bf284a183dcab0262edd4"
+size = 23643023
+
+[[gdelt.origins]]
+filename = "200610.zip"
+url = "http://data.gdeltproject.org/events/200610.zip"
+sha256 = "05343afbc5be06c7f2ca38aea73a80f98fd1afef533f8efa64887761761539d6"
+size = 17163650
+
+[[gdelt.origins]]
+filename = "200611.zip"
+url = "http://data.gdeltproject.org/events/200611.zip"
+sha256 = "561cd666c637c2ccd4caf10adc872dfdc31c03db8a9105e10008496f88ec9ff1"
+size = 24468582
+
+[[gdelt.origins]]
+filename = "200612.zip"
+url = "http://data.gdeltproject.org/events/200612.zip"
+sha256 = "9c0573c57f61dbc3c7f3793b277916ef4279d33163d8cbbe5b8561773e73e5cb"
+size = 20937805
+
+[[gdelt.origins]]
+filename = "200701.zip"
+url = "http://data.gdeltproject.org/events/200701.zip"
+sha256 = "b5b2243542857fa6f00c14daac77277761052fa906163ff716017a7ee94143f4"
+size = 23562685
+
+[[gdelt.origins]]
+filename = "200702.zip"
+url = "http://data.gdeltproject.org/events/200702.zip"
+sha256 = "d8aeaa07f08265052ebbc6ed39d74888b19c770e8ba5ce02524799923da5347a"
+size = 22851888
+
+[[gdelt.origins]]
+filename = "200703.zip"
+url = "http://data.gdeltproject.org/events/200703.zip"
+sha256 = "ae3686340e6e81da140ea3b89d23d2d37d8c2366379a3aeeddc0c07de52a8907"
+size = 31732833
+
+[[gdelt.origins]]
+filename = "200704.zip"
+url = "http://data.gdeltproject.org/events/200704.zip"
+sha256 = "f0ff635c9b665d7987bf67aea2c64b3edc1b6880f2bf13bc03b458a5a2c7b6af"
+size = 37559465
+
+[[gdelt.origins]]
+filename = "200705.zip"
+url = "http://data.gdeltproject.org/events/200705.zip"
+sha256 = "6056af35d243530994b06bf42efd147f7766db694ab235441d08262161b2fa1d"
+size = 39539374
+
+[[gdelt.origins]]
+filename = "200706.zip"
+url = "http://data.gdeltproject.org/events/200706.zip"
+sha256 = "8bfd18ddeac2329e2a0e87c42f9654a882ac17bf3f419cc8062e71013711c272"
+size = 38198864
+
+[[gdelt.origins]]
+filename = "200707.zip"
+url = "http://data.gdeltproject.org/events/200707.zip"
+sha256 = "610b8653685d8043f191467a9892de85c0b0b3e25889dd4f5fcae8c829a88752"
+size = 34408788
+
+[[gdelt.origins]]
+filename = "200708.zip"
+url = "http://data.gdeltproject.org/events/200708.zip"
+sha256 = "fd85ed65bca683f71785248d7a05f3c4254f7c5664d3fc53ea858376ddc1a60d"
+size = 26571488
+
+[[gdelt.origins]]
+filename = "200709.zip"
+url = "http://data.gdeltproject.org/events/200709.zip"
+sha256 = "b930420704d32967e34c79bdd36bd1a9db96428f6e76838a32cd0a8a927ef78a"
+size = 34322464
+
+[[gdelt.origins]]
+filename = "200710.zip"
+url = "http://data.gdeltproject.org/events/200710.zip"
+sha256 = "abdf01ae1e679b592ed5c1ebd7c2e54e966bcdc30d637e8116c35a8981728efd"
+size = 40649820
+
+[[gdelt.origins]]
+filename = "200711.zip"
+url = "http://data.gdeltproject.org/events/200711.zip"
+sha256 = "77986f21767d0c44c832032615116480776d47da8cc606c7a03354719141be2c"
+size = 38580248
+
+[[gdelt.origins]]
+filename = "200712.zip"
+url = "http://data.gdeltproject.org/events/200712.zip"
+sha256 = "1d5994fb7a3efa82a8f30088ef7137a895b3194e32d280f7ef13de2b563417a8"
+size = 33964138
+
+[[gdelt.origins]]
+filename = "200801.zip"
+url = "http://data.gdeltproject.org/events/200801.zip"
+sha256 = "ae37bf6ccf334904ab7732131afed29da55eb6a31d1af47236b4e58ab4c4a279"
+size = 43145257
+
+[[gdelt.origins]]
+filename = "200802.zip"
+url = "http://data.gdeltproject.org/events/200802.zip"
+sha256 = "7cf5e97ca05e682cacb8b2f017d6ffc03e9d9920b90c77f0881386a5d2427632"
+size = 47317752
+
+[[gdelt.origins]]
+filename = "200803.zip"
+url = "http://data.gdeltproject.org/events/200803.zip"
+sha256 = "2f7589d42f92784d3ad0df65d96a54c4e55dee05a7ac33d8270ef354f8ee20f7"
+size = 42547187
+
+[[gdelt.origins]]
+filename = "200804.zip"
+url = "http://data.gdeltproject.org/events/200804.zip"
+sha256 = "7f33b93ec6e8a71c2f1fdb92112d7b3cf12c12d26acc169f8b2addb6828c5f7a"
+size = 43170443
+
+[[gdelt.origins]]
+filename = "200805.zip"
+url = "http://data.gdeltproject.org/events/200805.zip"
+sha256 = "bbc7eba6602468350e092c303942e59899878b084014840bcc316db3610bba19"
+size = 45787706
+
+[[gdelt.origins]]
+filename = "200806.zip"
+url = "http://data.gdeltproject.org/events/200806.zip"
+sha256 = "29dde57dd9c73ab8ef94ade0e2d8a342e52b9cd3b432a2c01626cc1fd16e6212"
+size = 43708354
+
+[[gdelt.origins]]
+filename = "200807.zip"
+url = "http://data.gdeltproject.org/events/200807.zip"
+sha256 = "173f8a4c29e48005bb5e8724fe4c66a8d92a555d448017d16e752ca32dce972b"
+size = 46413991
+
+[[gdelt.origins]]
+filename = "200808.zip"
+url = "http://data.gdeltproject.org/events/200808.zip"
+sha256 = "f2c6aa272c722e2358456accb4908967967b623ddc01cba576079dd6461624a8"
+size = 37589731
+
+[[gdelt.origins]]
+filename = "200809.zip"
+url = "http://data.gdeltproject.org/events/200809.zip"
+sha256 = "874716efb15ea6dd97549b84b6f7f50b3bc92ba457db35fdbb5113dd01583c73"
+size = 32922335
+
+[[gdelt.origins]]
+filename = "200810.zip"
+url = "http://data.gdeltproject.org/events/200810.zip"
+sha256 = "f02ffd7f9ae2cfb73214e07682ee355fe1cfcb1ab20d8bc1fd5a1f2c396d1c43"
+size = 43136613
+
+[[gdelt.origins]]
+filename = "200811.zip"
+url = "http://data.gdeltproject.org/events/200811.zip"
+sha256 = "4f0e5b7217ba149946e96fc196e87a2ae6adaf6575bf9c1ad86d35ee362e1196"
+size = 43523237
+
+[[gdelt.origins]]
+filename = "200812.zip"
+url = "http://data.gdeltproject.org/events/200812.zip"
+sha256 = "e935112ba3d6f4b6a1929bdd50a6cb52e1ae47535c96434e22249b12dec49a41"
+size = 46762854
+
+[[gdelt.origins]]
+filename = "200901.zip"
+url = "http://data.gdeltproject.org/events/200901.zip"
+sha256 = "6d293289f780bd273704fc238cf146475b1b4f568feb08ca7290958d0451eddf"
+size = 69724595
+
+[[gdelt.origins]]
+filename = "200902.zip"
+url = "http://data.gdeltproject.org/events/200902.zip"
+sha256 = "eb1b9cfba43e664a45b0ca5628450e3a7b12c767b2e1b040abe867a43ded69d1"
+size = 60974432
+
+[[gdelt.origins]]
+filename = "200903.zip"
+url = "http://data.gdeltproject.org/events/200903.zip"
+sha256 = "40e1edb7b34aad7ab5f28a8595f64b7af08b93a0e838ebb6cdc23556b64abb25"
+size = 64771365
+
+[[gdelt.origins]]
+filename = "200904.zip"
+url = "http://data.gdeltproject.org/events/200904.zip"
+sha256 = "c6fdad1ce9c7a8cb99d85e33276a06264f6568aea289154afa469d614cd2dedb"
+size = 68763842
+
+[[gdelt.origins]]
+filename = "200905.zip"
+url = "http://data.gdeltproject.org/events/200905.zip"
+sha256 = "51d81e04395cb0ccca7ac6394b9f959ced1d7d235b355aa767303d043c311025"
+size = 69898693
+
+[[gdelt.origins]]
+filename = "200906.zip"
+url = "http://data.gdeltproject.org/events/200906.zip"
+sha256 = "3f54cf435d3540c833d6d66bbf9a8e0fd248399d2a84c031a5d8c00a7704d67a"
+size = 65674589
+
+[[gdelt.origins]]
+filename = "200907.zip"
+url = "http://data.gdeltproject.org/events/200907.zip"
+sha256 = "4661162b3d45f2b757eb4e8027810e3ac656b7753381174adb1fed591c4589d6"
+size = 53872909
+
+[[gdelt.origins]]
+filename = "200908.zip"
+url = "http://data.gdeltproject.org/events/200908.zip"
+sha256 = "9758a18fb5b0dd3e4bee3d09c329af33b11e6fc2d69786879cb1814c1c3f6ed5"
+size = 79668048
+
+[[gdelt.origins]]
+filename = "200909.zip"
+url = "http://data.gdeltproject.org/events/200909.zip"
+sha256 = "65021eef180db7c9ab84177cf8ac94b25a3b3ad0e31231827c7dedd99aff6c2e"
+size = 84085867
+
+[[gdelt.origins]]
+filename = "200910.zip"
+url = "http://data.gdeltproject.org/events/200910.zip"
+sha256 = "2163de6aa2847cd3d09f1e3a804bc97b249446903d674e2dfde96e4dff348aa2"
+size = 84205959
+
+[[gdelt.origins]]
+filename = "200911.zip"
+url = "http://data.gdeltproject.org/events/200911.zip"
+sha256 = "01c675dc8ded1385ed51bffa4003bf0fb8ce4c838896ccb6a830f182353f7271"
+size = 69011509
+
+[[gdelt.origins]]
+filename = "200912.zip"
+url = "http://data.gdeltproject.org/events/200912.zip"
+sha256 = "e2d142292dafa9af970db16d71ad1b236aaab3f68738307c7f1083e4b3df4e69"
+size = 79687746
+
+[[gdelt.origins]]
+filename = "201001.zip"
+url = "http://data.gdeltproject.org/events/201001.zip"
+sha256 = "dc13d3ccf140e4f100e8e0c248451bb51d48741899783415986402a61dc28d0d"
+size = 82916072
+
+[[gdelt.origins]]
+filename = "201002.zip"
+url = "http://data.gdeltproject.org/events/201002.zip"
+sha256 = "f7656fcc6c8d5eecb301c163e71f40606a14e05440024b149c9c1077dac62f8e"
+size = 73284489
+
+[[gdelt.origins]]
+filename = "201003.zip"
+url = "http://data.gdeltproject.org/events/201003.zip"
+sha256 = "af7dac2223ff3261fabe87c2dfa9fd7589a2cee4e39057a763fe1eb3e1dbc9d8"
+size = 23979054
+
+[[gdelt.origins]]
+filename = "201004.zip"
+url = "http://data.gdeltproject.org/events/201004.zip"
+sha256 = "5e60f1e71a27cb141fd03bd5fd1b2d9b6f1c2d8a885f7c5edbd1eddc6cee4cae"
+size = 42924985
+
+[[gdelt.origins]]
+filename = "201005.zip"
+url = "http://data.gdeltproject.org/events/201005.zip"
+sha256 = "7db4185a127dfabaa066012f879a90fc196c868ff4b43ad8f437ff4e2bbdce39"
+size = 37575733
+
+[[gdelt.origins]]
+filename = "201006.zip"
+url = "http://data.gdeltproject.org/events/201006.zip"
+sha256 = "ef1b2170766ea801e183c09c767a8e5cdb96cd354f5e594c34787e577231ac7f"
+size = 35470707
+
+[[gdelt.origins]]
+filename = "201007.zip"
+url = "http://data.gdeltproject.org/events/201007.zip"
+sha256 = "b094a2fa9f19f869c4a7aa39b2fe445fe2a1771de56c85cf0e3be3b4abc4cee6"
+size = 45688225
+
+[[gdelt.origins]]
+filename = "201008.zip"
+url = "http://data.gdeltproject.org/events/201008.zip"
+sha256 = "7a1b480458d9a16f5db2c22c0579c8fc2164aee47a8413d1c52504b41ce1ee7c"
+size = 100589880
+
+[[gdelt.origins]]
+filename = "201009.zip"
+url = "http://data.gdeltproject.org/events/201009.zip"
+sha256 = "28f168020666a30ae5292271c7f0d0f326d0e24ebd0de45e554980b1f88b537e"
+size = 107000391
+
+[[gdelt.origins]]
+filename = "201010.zip"
+url = "http://data.gdeltproject.org/events/201010.zip"
+sha256 = "9421c4761e3f0a9daeb3473f387bce2c0a16c6474aa3e887274a4d308b4fa86a"
+size = 86256875
+
+[[gdelt.origins]]
+filename = "201011.zip"
+url = "http://data.gdeltproject.org/events/201011.zip"
+sha256 = "1ab97a36e2e3ae3d241c4d685af921d7607aa6f2f1c1d72704a68b2398665af8"
+size = 96387412
+
+[[gdelt.origins]]
+filename = "201012.zip"
+url = "http://data.gdeltproject.org/events/201012.zip"
+sha256 = "e3f40cc51a340ef65a29a2c0a5229301289402b7b5d2cd7ae9b121b95e324ede"
+size = 98761333

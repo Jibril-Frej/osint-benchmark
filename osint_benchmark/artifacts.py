@@ -15,6 +15,7 @@ is what makes this hold: per-file discipline does not, a check applied to everyt
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import json
 from collections.abc import Iterable, Iterator
@@ -167,7 +168,7 @@ def write_records(
     """
     output.parent.mkdir(parents=True, exist_ok=True)
     count = 0
-    with output.open("w", encoding="utf-8") as handle:
+    with _open_text(output, "w") as handle:
         for record in records:
             handle.write(canonical(record) + "\n")
             count += 1
@@ -175,9 +176,20 @@ def write_records(
     return count
 
 
+def _open_text(path: Path, mode: str):
+    """Open a JSONL file, transparently gzipped when the name says so.
+
+    GDELT is 91.6M events: 78 GB of JSONL, or 6.2 GB compressed. Compression is what
+    makes keeping every column affordable, so the projection stays honest.
+    """
+    if path.suffix == ".gz":
+        return gzip.open(path, mode + "t", encoding="utf-8")
+    return path.open(mode, encoding="utf-8")
+
+
 def read_jsonl(path: Path) -> Iterator[dict[str, Any]]:
-    """Yield each record of a JSONL file."""
-    with path.open(encoding="utf-8") as handle:
+    """Yield each record of a JSONL file, gzipped or not."""
+    with _open_text(path, "r") as handle:
         for line in handle:
             line = line.strip()
             if line:

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import pytest
 
-from osint_benchmark.artifacts import read_jsonl
 from osint_benchmark.schema import Document
 from osint_benchmark.sources import base
 from osint_benchmark.sources.base import Projection, Source, SourceUnavailable
@@ -93,55 +92,76 @@ class TestFetch:
 class TestVerify:
     """verify is what stands between a parse regression and someone's wrong numbers."""
 
-    def test_no_baseline_is_reported_but_is_not_a_failure(self, env):
-        """Before the first release there is nothing to check against.
-
-        The report says so rather than claiming a match, but a build is not wrong for
-        being the first one — only a contradiction of published hashes is.
-        """
+    def test_no_published_fingerprint_is_reported_but_is_not_a_failure(self, env):
+        """Before the first release there is nothing to check against."""
         source = _source([Document(doc_id="1", source="demo", text="x")])
         base.parse(source)
 
         report = base.verify(source)
 
-        assert report.baseline_missing
-        assert "no published hashes" in report.summary()
+        assert report.expected is None
+        assert report.built.records == 1
+        assert "no published fingerprint" in report.summary()
         assert report.ok
 
-    def test_a_published_baseline_then_verifies(self, env):
-        """Recording a baseline and checking against it is a round trip."""
+    def test_a_published_fingerprint_then_verifies(self, env):
+        """Publishing a fingerprint and checking against it is a round trip."""
         source = _source([Document(doc_id="1", source="demo", text="x")])
         base.parse(source)
 
-        base.write_hashes(source)
+        base.write_fingerprint(source)
         report = base.verify(source)
 
         assert report.ok
-        assert report.checked == 1
-        assert [r["doc_id"] for r in read_jsonl(base.hashes_path("demo"))] == ["1"]
+        assert report.built.records == 1
+        assert base.load_fingerprint("demo").sha256 == report.built.sha256
 
-    def test_a_changed_document_is_caught(self, env):
-        """The escapechar failure in miniature: same document id, different text."""
+    def test_changed_text_changes_the_fingerprint(self, env):
+        """The escapechar failure in miniature: same record count, different content."""
         base.parse(_source([Document(doc_id="1", source="demo", text="full text")]))
-        base.write_hashes(_source())
+        base.write_fingerprint(_source())
 
         base.parse(_source([Document(doc_id="1", source="demo", text="trunc")]))
         report = base.verify(_source())
 
-        assert report.changed == ("1",)
         assert not report.ok
+        assert report.built.records == 1
+        assert "MISMATCH" in report.summary()
 
-    def test_a_missing_document_is_caught(self, env):
+    def test_a_lost_record_is_caught(self, env):
         """A cable that stopped being parsed is a loss, not an absence of news."""
         both = [
             Document(doc_id="1", source="demo", text="one"),
             Document(doc_id="2", source="demo", text="two"),
         ]
         base.parse(_source(both))
-        base.write_hashes(_source())
+        base.write_fingerprint(_source())
 
         base.parse(_source(both[:1]))
         report = base.verify(_source())
 
-        assert report.missing == ("2",)
         assert not report.ok
+        assert report.built.records == 1
+        assert report.expected.records == 2
+
+    def test_reordered_records_are_a_different_build(self, env):
+        """Order is part of the corpus: a parser that reorders has changed behaviour."""
+        both = [
+            Document(doc_id="1", source="demo", text="one"),
+            Document(doc_id="2", source="demo", text="two"),
+        ]
+        base.parse(_source(both))
+        base.write_fingerprint(_source())
+
+        base.parse(_source(list(reversed(both))))
+
+        assert not base.verify(_source()).ok
+
+    def test_the_fingerprint_is_one_line_of_pins(self, env):
+        """The whole point: one line per source, at any corpus size."""
+        base.parse(_source([Document(doc_id=str(i), source="demo", text="x") for i in range(50)]))
+
+        path = base.write_fingerprint(_source())
+        lines = [line for line in path.read_text().splitlines() if line.startswith("demo =")]
+
+        assert len(lines) == 1

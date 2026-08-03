@@ -15,6 +15,7 @@ import pytest
 from osint_benchmark.artifacts import (
     Provenance,
     check_provenance,
+    read_jsonl,
     record_hash,
     sidecar_path,
     write_provenance,
@@ -153,3 +154,18 @@ class TestRecordHash:
         base = {"doc_id": "1", "text": "same", "meta": {"classification": "CONFIDENTIAL"}}
         other = {"doc_id": "1", "text": "same", "meta": {"classification": "SECRET"}}
         assert record_hash(base) != record_hash(other)
+
+
+class TestGzippedOutput:
+    """Large sources are written compressed so keeping every column stays affordable."""
+
+    def test_a_gz_path_round_trips_through_the_reader(self, tmp_path):
+        """GDELT is 78 GB plain and 6.2 GB gzipped; the reader must not care which."""
+        output = tmp_path / "big.jsonl.gz"
+
+        count = write_records(output, [{"doc_id": "1", "a": "x"}], SOUND, rows_in=1)
+
+        assert count == 1
+        assert output.read_bytes()[:2] == b"\x1f\x8b"  # gzip magic
+        assert list(read_jsonl(output)) == [{"doc_id": "1", "a": "x"}]
+        assert _written(output)["rows_out"] == 1

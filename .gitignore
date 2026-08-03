@@ -4,9 +4,9 @@ data/
 *.jsonl
 *.jsonl.gz
 
-# The pins are the exception: small, and the point of them is that they are committed —
-# they are how a rebuilder checks their corpus against the one the benchmark was built on.
-!pins/hashes/*.jsonl
+# pins/ is committed: it is how a rebuilder checks their corpora against the ones the
+# benchmark was built on. Nothing in it is large -- one line per source.
+!pins/
 
 # Python
 .venv/

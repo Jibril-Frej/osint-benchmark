@@ -18,7 +18,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from osint_benchmark import config
+from osint_benchmark import paths
 from osint_benchmark.sources import ALL, base, get_source
 
 
@@ -28,7 +28,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("sources", nargs="*", help=f"default: all of {', '.join(ALL)}")
     args = parser.parse_args(argv)
 
-    print(f"raw={config.raw_dir()}  docs={config.docs_dir()}  pins={config.pins_dir()}")
+    print(f"raw={paths.raw_dir()}  docs={paths.docs_dir()}  pins={paths.pins_dir()}")
     failed = False
     for name in args.sources or ALL:
         source = get_source(name)

@@ -1,0 +1,39 @@
+# Every tunable governing a model call. Changing behaviour is an edit here, not in Python.
+#
+# The prompts these settings govern are in `prompts/`, one file each. Read both together:
+# a prompt is only correct in combination with the parameters it runs under.
+#
+# `endpoint` is empty by default because the models are served, not embedded -- set it to
+# a running llama-server, or point OSINT_MODEL_ENDPOINT at one.
+
+[phraser]
+# Writes the question and its answer from the two documents.
+model = "QwQ-32B"
+endpoint = ""
+temperature = 0.7
+# QwQ is a reasoning model: replies open with a <think> block, and the trace must be
+# stripped before the answer is read. At the judge's usual 256-token ceiling every reply
+# truncates mid-reasoning and scores as a failure to answer -- which silently marked every
+# question necessary in the previous project. Hence the room.
+max_tokens = 4096
+samples = 1
+
+[judge]
+# Verdicts and quality decisions. A different model family from the phraser on purpose:
+# scoring your own output is self-enhancement bias, not evaluation.
+model = "Llama-3.3-70B-Instruct"
+endpoint = ""
+temperature = 0.7
+max_tokens = 1024
+# Repeat-and-agree: ask n times, keep only a unanimous verdict. Unanimity is meaningless
+# at temperature 0, so sampling has to be on for the repeats to differ at all.
+samples = 3
+
+[solver]
+# Re-solves a finished question under each necessity ablation. QwQ rather than the 70B
+# judge: it is a third of the size, and fits on hardware the 70B does not.
+model = "QwQ-32B"
+endpoint = ""
+temperature = 0.7
+max_tokens = 4096
+samples = 1
