@@ -117,13 +117,13 @@ class VerifyReport:
 
     @property
     def ok(self) -> bool:
-        """True when every pinned document is present and unchanged."""
-        return not (self.changed or self.missing or self.unexpected or self.baseline_missing)
+        """True when nothing contradicts the published hashes."""
+        return not (self.changed or self.missing or self.unexpected)
 
     def summary(self) -> str:
         """Return a one-line human summary."""
         if self.baseline_missing:
-            return f"{self.source}: no pinned hashes; run with --write-pins to record a baseline"
+            return f"{self.source}: {self.checked} documents built, no published hashes to check"
         if self.ok:
             return f"{self.source}: {self.checked} documents match the pinned hashes"
         return (
@@ -159,7 +159,7 @@ def raw_path(source: Source, origin: Origin, raw_dir: Path | None = None) -> Pat
     return (raw_dir or config.raw_dir()) / source.name / origin.filename
 
 
-def fetch(source: Source, raw_dir: Path | None = None, *, check_hash: bool = True) -> list[Path]:
+def fetch(source: Source, raw_dir: Path | None = None) -> list[Path]:
     """Ensure every raw file for a source is present and matches its pin.
 
     A file already on disk is never re-downloaded, so pointing ``OSINT_RAW`` at an
@@ -182,7 +182,7 @@ def fetch(source: Source, raw_dir: Path | None = None, *, check_hash: bool = Tru
                 )
             dest.parent.mkdir(parents=True, exist_ok=True)
             _download(origin.url, dest, origin.size)
-        _check_raw(source, origin, dest, check_hash=check_hash)
+        _check_raw(source, origin, dest)
         paths.append(dest)
     return paths
 
@@ -203,31 +203,44 @@ def hashes_path(name: str, pins_dir: Path | None = None) -> Path:
     return (pins_dir or config.pins_dir()) / "hashes" / f"{name}.jsonl"
 
 
+def document_hashes(source: Source, docs_dir: Path | None = None) -> dict[str, str]:
+    """Return ``doc_id -> sha256`` for a source's built documents."""
+    output = (docs_dir or config.docs_dir()) / f"{source.name}.jsonl"
+    return {record["doc_id"]: record_hash(record) for record in read_jsonl(output)}
+
+
+def write_hashes(
+    source: Source, docs_dir: Path | None = None, pins_dir: Path | None = None
+) -> Path:
+    """Record the built documents' hashes as the baseline everyone else checks against.
+
+    Freezing a baseline is part of publishing a release, so this belongs to step 9 and is
+    deliberately not something a run of step 1 can do — the pins a rebuilder verifies
+    against must come from the release, not from their own rebuild.
+    """
+    pins_file = hashes_path(source.name, pins_dir)
+    pins_file.parent.mkdir(parents=True, exist_ok=True)
+    with pins_file.open("w", encoding="utf-8") as handle:
+        for doc_id, digest in sorted(document_hashes(source, docs_dir).items()):
+            handle.write(canonical({"doc_id": doc_id, "sha256": digest}) + "\n")
+    return pins_file
+
+
 def verify(
-    source: Source,
-    docs_dir: Path | None = None,
-    pins_dir: Path | None = None,
-    *,
-    write_pins: bool = False,
+    source: Source, docs_dir: Path | None = None, pins_dir: Path | None = None
 ) -> VerifyReport:
-    """Check built documents against the committed hashes.
+    """Check built documents against the hashes published with the benchmark.
 
     This exists because users build the corpora themselves, so a parse regression becomes
     *their* wrong numbers rather than a crash. The failure it is here to catch is real: a
     missing ``escapechar`` in the Cablegate parse cost 68% of the corpus text and produced
     a perfectly well-formed file.
+
+    No published baseline is reported, not treated as a failure: before the first release
+    there is nothing to check against, and a build is not wrong for being the first.
     """
-    output = (docs_dir or config.docs_dir()) / f"{source.name}.jsonl"
-    built = {record["doc_id"]: record_hash(record) for record in read_jsonl(output)}
-
+    built = document_hashes(source, docs_dir)
     pins_file = hashes_path(source.name, pins_dir)
-    if write_pins:
-        pins_file.parent.mkdir(parents=True, exist_ok=True)
-        with pins_file.open("w", encoding="utf-8") as handle:
-            for doc_id, digest in sorted(built.items()):
-                handle.write(canonical({"doc_id": doc_id, "sha256": digest}) + "\n")
-        return VerifyReport(source=source.name, checked=len(built))
-
     if not pins_file.exists():
         return VerifyReport(source=source.name, checked=len(built), baseline_missing=True)
 
@@ -288,13 +301,13 @@ def _download(url: str, dest: Path, expected_size: int | None = None) -> None:
     partial.replace(dest)
 
 
-def _check_raw(source: Source, origin: Origin, path: Path, *, check_hash: bool) -> None:
+def _check_raw(source: Source, origin: Origin, path: Path) -> None:
     """Check one raw file against its pinned size and checksum."""
     if origin.size is not None and path.stat().st_size != origin.size:
         raise SourceUnavailable(
             f"{source.name}: {path} is {path.stat().st_size} bytes, pinned at {origin.size}"
         )
-    if check_hash and origin.sha256:
+    if origin.sha256:
         actual = file_hash(path)
         if actual != origin.sha256:
             raise SourceUnavailable(

@@ -90,22 +90,27 @@ class TestFetch:
 class TestVerify:
     """verify is what stands between a parse regression and someone's wrong numbers."""
 
-    def test_no_baseline_is_reported_rather_than_passing(self, env):
-        """An absent pin file must not read as "everything matches"."""
+    def test_no_baseline_is_reported_but_is_not_a_failure(self, env):
+        """Before the first release there is nothing to check against.
+
+        The report says so rather than claiming a match, but a build is not wrong for
+        being the first one — only a contradiction of published hashes is.
+        """
         source = _source([Document(doc_id="1", source="demo", text="x")])
         base.parse(source)
 
         report = base.verify(source)
 
         assert report.baseline_missing
-        assert not report.ok
+        assert "no published hashes" in report.summary()
+        assert report.ok
 
-    def test_write_pins_then_verify_passes(self, env):
+    def test_a_published_baseline_then_verifies(self, env):
         """Recording a baseline and checking against it is a round trip."""
         source = _source([Document(doc_id="1", source="demo", text="x")])
         base.parse(source)
 
-        base.verify(source, write_pins=True)
+        base.write_hashes(source)
         report = base.verify(source)
 
         assert report.ok
@@ -115,7 +120,7 @@ class TestVerify:
     def test_a_changed_document_is_caught(self, env):
         """The escapechar failure in miniature: same document id, different text."""
         base.parse(_source([Document(doc_id="1", source="demo", text="full text")]))
-        base.verify(_source(), write_pins=True)
+        base.write_hashes(_source())
 
         base.parse(_source([Document(doc_id="1", source="demo", text="trunc")]))
         report = base.verify(_source())
@@ -130,7 +135,7 @@ class TestVerify:
             Document(doc_id="2", source="demo", text="two"),
         ]
         base.parse(_source(both))
-        base.verify(_source(), write_pins=True)
+        base.write_hashes(_source())
 
         base.parse(_source(both[:1]))
         report = base.verify(_source())
