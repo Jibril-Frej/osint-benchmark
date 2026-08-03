@@ -1,23 +1,27 @@
 # Where every raw input comes from, and what it must hash to.
 #
-# This file is the reason the repo ships build scripts instead of corpora: a rebuilder
-# can confirm their copy of a source is byte-identical to the one the benchmark was
-# built against without receiving any of it. Re-pinning a dump date is an edit here,
-# never a code change.
+# This file is what makes the repo self-contained without redistributing anything: a
+# clone fetches each source from its own home and checks the bytes against the copy the
+# benchmark was built from. Re-pinning a dump date is an edit here, never a code change.
 #
-# An origin with no `url` is one that is not redistributed and cannot be fetched
-# unattended; its `note` says how to obtain it, and `fetch` reports that note instead
-# of failing obscurely.
+# `sha256` and `size` identify one exact copy. A mirror serving a different copy fails
+# the check rather than quietly producing a different corpus — which is the point, since
+# several of these sources exist in more than one version.
+#
+# An origin may leave `url` empty when a source genuinely cannot be fetched unattended
+# (a login, a click-through licence). `fetch` then reports that origin's `note` instead
+# of failing obscurely. That is an exception; every source that can be fetched should be.
 
 [cablegate]
 kind = "private"
 
 [[cablegate.origins]]
 filename = "cables.csv"
-url = ""
+url = "https://archive.org/download/wikileaks-cables-csv/cables.csv"
 sha256 = "ad9b7530f038e4237f1729843d1dc096a63162a4ff8024e596ec3b2a8e64b139"
 size = 1730507223
-note = """WikiLeaks Cablegate, the full cable set as one CSV. Not redistributed by this
-project. Obtain cables.csv from a public Cablegate mirror and place it at
-<OSINT_RAW>/cablegate/cables.csv, or point OSINT_RAW at a directory that already holds
-it. The pinned size and checksum identify the exact copy the benchmark was built from."""
+note = """WikiLeaks Cablegate: all 251,287 US diplomatic cables as one CSV, from the
+September 2011 full release. Mirrored by the Internet Archive as item
+`wikileaks-cables-csv`, whose recorded sha1 (9a3c594c...) and md5 (ecd3ca94...) match
+the copy this benchmark was built from, so the pinned sha256 identifies the same bytes.
+Nothing is redistributed by this project; the URL points at that mirror."""
