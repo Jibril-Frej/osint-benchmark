@@ -64,7 +64,7 @@ def by_code(scheme: str, codes: Iterable[str], query: Query = sparql) -> dict[st
         KeyError: If the scheme has no known Wikidata property.
     """
     if scheme not in CODE_PROPERTIES:
-        known = ', '.join(sorted(CODE_PROPERTIES))
+        known = ", ".join(sorted(CODE_PROPERTIES))
         raise KeyError(f"unknown code scheme {scheme!r}; known: {known}")
     prop = CODE_PROPERTIES[scheme]
     wanted = [c for c in dict.fromkeys(codes) if c]
