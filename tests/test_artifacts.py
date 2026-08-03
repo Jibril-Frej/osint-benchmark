@@ -17,8 +17,8 @@ from osint_benchmark.artifacts import (
     check_provenance,
     record_hash,
     sidecar_path,
-    write_documents,
     write_provenance,
+    write_records,
 )
 from osint_benchmark.schema import Document
 
@@ -113,18 +113,18 @@ class TestWriteProvenance:
         assert not sidecar_path(tmp_path / "out.jsonl").exists()
 
 
-class TestWriteDocuments:
+class TestWriteRecords:
     """Documents cannot be written without their provenance."""
 
     def test_writes_jsonl_and_sidecar_together(self, tmp_path):
         """One JSON object per line, and a sidecar recording the row count."""
         output = tmp_path / "docs" / "test.jsonl"
-        documents = [
-            Document(doc_id="1", source="test", text="one"),
-            Document(doc_id="2", source="test", text="two"),
+        records = [
+            Document(doc_id="1", source="test", text="one").to_json(),
+            Document(doc_id="2", source="test", text="two").to_json(),
         ]
 
-        count = write_documents(output, documents, SOUND, rows_in=2)
+        count = write_records(output, records, SOUND, rows_in=2)
 
         assert count == 2
         assert len(output.read_text(encoding="utf-8").splitlines()) == 2
@@ -137,7 +137,7 @@ class TestWriteDocuments:
         bad = Provenance(source="s", source_fields=("a", "b"), kept={"a": "text"})
 
         with pytest.raises(ValueError):
-            write_documents(output, [Document(doc_id="1", source="t", text="x")], bad)
+            write_records(output, [Document(doc_id="1", source="t", text="x").to_json()], bad)
         assert not sidecar_path(output).exists()
 
 

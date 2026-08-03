@@ -5,7 +5,7 @@
 # benchmark was built from. Re-pinning a dump date is an edit here, never a code change.
 #
 # `sha256` and `size` identify one exact copy. A mirror serving a different copy fails
-# the check rather than quietly producing a different corpus — which is the point, since
+# the check rather than quietly producing a different corpus -- which is the point, since
 # several of these sources exist in more than one version.
 #
 # An origin may leave `url` empty when a source genuinely cannot be fetched unattended
@@ -25,3 +25,32 @@ September 2011 full release. Mirrored by the Internet Archive as item
 `wikileaks-cables-csv`, whose recorded sha1 (9a3c594c...) and md5 (ecd3ca94...) match
 the copy this benchmark was built from, so the pinned sha256 identifies the same bytes.
 Nothing is redistributed by this project; the URL points at that mirror."""
+
+[ucdp]
+kind = "public"
+
+[[ucdp.origins]]
+filename = "ged251-csv.zip"
+url = "https://ucdp.uu.se/downloads/ged/ged251-csv.zip"
+sha256 = "e256f1fb20a579d8b2f910e5bae212f486d3002adaa2e4359ace740c737da05d"
+size = 29307888
+note = """UCDP Georeferenced Event Dataset, release v25.1. A release is immutable, so it
+pins exactly. Holds GEDEvent_v25_1.csv (250,393,383 bytes), read straight out of the zip."""
+
+[sanctions]
+kind = "public"
+
+[[sanctions.origins]]
+filename = "sesam.xml"
+url = "https://www.sesam.search.admin.ch/sesam-search-web/pages/downloadXmlGesamtliste.xhtml?lang=en&action=downloadXmlGesamtlisteAction"
+sha256 = ""
+note = """SECO SESAM sanctions list, whole-list XML export. DELIBERATELY UNPINNED: a live
+snapshot rather than a versioned release -- 39,899,536 bytes on 2026-07-27, 39,920,777 on
+2026-07-30. A checksum here would fail for everyone the first time SECO changes a listing.
+Each parsed record carries the export's own list_date instead, and freezing a release means
+archiving the XML that was fetched."""
+
+# No origins: the parliamentary record is a paged OData API, not a file, so it fetches
+# itself (osint_benchmark/sources/parliament.py) and there is nothing to checksum.
+[parliament]
+kind = "public"

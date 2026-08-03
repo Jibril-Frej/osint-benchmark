@@ -182,8 +182,8 @@ class TestParse:
 
         documents = list(parse(raw))
 
-        assert [d.doc_id for d in documents] == ["1", "2"]
-        assert {d.meta["origin"] for d in documents} == {"Embassy Bern", "Embassy Paris"}
+        assert [d["doc_id"] for d in documents] == ["1", "2"]
+        assert {d["meta"]["origin"] for d in documents} == {"Embassy Bern", "Embassy Paris"}
 
     def test_malformed_record_costs_one_cable_and_no_more(self, tmp_path):
         """A record too malformed to parse yields empty content, and its neighbours survive."""
@@ -199,11 +199,11 @@ class TestParse:
 
         documents = list(parse(raw))
 
-        assert [d.doc_id for d in documents] == ["1", "2", "3"]
-        assert documents[0].text == "body one"
-        assert documents[1].text == ""
-        assert documents[1].meta["header"] == ""
-        assert documents[2].text == "body three"
+        assert [d["doc_id"] for d in documents] == ["1", "2", "3"]
+        assert documents[0]["text"] == "body one"
+        assert documents[1]["text"] == ""
+        assert documents[1]["meta"]["header"] == ""
+        assert documents[2]["text"] == "body three"
 
     def test_documents_serialise_to_the_on_disk_shape(self, tmp_path):
         """A parsed document round-trips through JSON with the expected keys."""
@@ -212,7 +212,7 @@ class TestParse:
             _record_line("1", "1/1/2010 9:00", "10BERN1", "Embassy Bern", "C", "", "h", "b"),
         )
 
-        record = json.loads(json.dumps(next(iter(parse(raw))).to_json()))
+        record = json.loads(json.dumps(next(iter(parse(raw)))))
 
         assert set(record) == {"doc_id", "source", "date", "lang", "title", "text", "meta"}
         assert record["lang"] == "en"

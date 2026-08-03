@@ -30,9 +30,8 @@ from osint_benchmark.artifacts import (
     canonical,
     read_jsonl,
     record_hash,
-    write_documents,
+    write_records,
 )
-from osint_benchmark.schema import Document
 
 HASH_CHUNK = 1 << 20
 HTTP_PARTIAL_CONTENT = 206
@@ -88,20 +87,25 @@ class Projection:
 
 @dataclass(frozen=True)
 class Source:
-    """One bulk corpus: where its raw files land, and how they become documents.
+    """One bulk corpus: where its raw files land, and how they become records.
 
     Attributes:
         name: The key used everywhere — on the command line, in ``pins/sources.toml``,
             and as the parsed output's filename.
         kind: ``"private"`` or ``"public"``. Which side of the membrane it sits on.
-        parse: Raw directory -> documents. Pure: no network, no writing.
+        parse: Raw directory -> records, each carrying a ``doc_id``. Pure: no network,
+            no writing.
         projection: What ``parse`` keeps and drops.
+        acquire: Set only when the source is not a set of files to download — the
+            parliamentary record is a paged API, so it fetches itself. Returns the raw
+            paths it wrote.
     """
 
     name: str
     kind: str
-    parse: Callable[[Path], Iterator[Document]]
+    parse: Callable[[Path], Iterator[dict]]
     projection: Projection
+    acquire: Callable[[Path], list[Path]] | None = None
 
 
 @dataclass(frozen=True)
@@ -172,6 +176,9 @@ def fetch(source: Source, raw_dir: Path | None = None) -> list[Path]:
         SourceUnavailable: If a file is absent and has no URL, or if it is present but
             does not match its pinned size or checksum.
     """
+    if source.acquire is not None:
+        return source.acquire((raw_dir or config.raw_dir()) / source.name)
+
     paths = []
     for origin in load_origins(source.name):
         dest = raw_path(source, origin, raw_dir)
@@ -190,7 +197,7 @@ def fetch(source: Source, raw_dir: Path | None = None) -> list[Path]:
 def parse(source: Source, raw_dir: Path | None = None, docs_dir: Path | None = None) -> Path:
     """Parse a source's raw files into ``<docs>/<name>.jsonl`` and return that path."""
     output = (docs_dir or config.docs_dir()) / f"{source.name}.jsonl"
-    write_documents(
+    write_records(
         output,
         source.parse(raw_dir or config.raw_dir()),
         source.projection.to_provenance(),
@@ -204,9 +211,30 @@ def hashes_path(name: str, pins_dir: Path | None = None) -> Path:
 
 
 def document_hashes(source: Source, docs_dir: Path | None = None) -> dict[str, str]:
-    """Return ``doc_id -> sha256`` for a source's built documents."""
+    """Return ``doc_id -> sha256`` for a source's built documents.
+
+    Raises:
+        ValueError: If two records share a ``doc_id``. Keying on it means duplicates
+            would collapse into one entry: the count would understate the corpus, and a
+            later run could lose every copy but one and still verify clean. That is not
+            hypothetical — it hid 8,470 spurious sanctions rows until the counts were
+            compared against the source by hand.
+    """
     output = (docs_dir or config.docs_dir()) / f"{source.name}.jsonl"
-    return {record["doc_id"]: record_hash(record) for record in read_jsonl(output)}
+    hashes: dict[str, str] = {}
+    duplicates: list[str] = []
+    for record in read_jsonl(output):
+        doc_id = record["doc_id"]
+        if doc_id in hashes:
+            duplicates.append(doc_id)
+        hashes[doc_id] = record_hash(record)
+    if duplicates:
+        shown = ", ".join(sorted(set(duplicates))[:5])
+        raise ValueError(
+            f"{source.name}: {len(duplicates)} records repeat a doc_id ({shown}); "
+            "doc_id must be unique within a source"
+        )
+    return hashes
 
 
 def write_hashes(

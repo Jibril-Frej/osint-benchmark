@@ -10,10 +10,13 @@ entities, with no symptom beyond filters silently matching nothing.
 
 from __future__ import annotations
 
-from osint_benchmark.sources import cablegate
+from osint_benchmark.sources import cablegate, parliament, sanctions, ucdp
 from osint_benchmark.sources.base import Source
 
-_SOURCES: dict[str, Source] = {source.name: source for source in (cablegate.SOURCE,)}
+_SOURCES: dict[str, Source] = {
+    source.name: source
+    for source in (cablegate.SOURCE, parliament.SOURCE, sanctions.SOURCE, ucdp.SOURCE)
+}
 
 ALL = tuple(_SOURCES)
 

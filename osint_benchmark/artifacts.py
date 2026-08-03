@@ -23,8 +23,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from osint_benchmark.schema import Document
-
 SIDECAR_SUFFIX = ".provenance.json"
 
 # What a derived file is. The name should say which, so an index is never mistaken for a
@@ -150,14 +148,19 @@ def record_hash(record: dict[str, Any]) -> str:
     return hashlib.sha256(canonical(record).encode("utf-8")).hexdigest()
 
 
-def write_documents(
+def write_records(
     output: Path,
-    documents: Iterable[Document],
+    records: Iterable[dict[str, Any]],
     provenance: Provenance,
     *,
     rows_in: int | None = None,
 ) -> int:
-    """Write documents as JSONL with their sidecar, and return how many were written.
+    """Write records as JSONL with their sidecar, and return how many were written.
+
+    Every record carries a ``doc_id`` unique within its source — that is what ``verify``
+    keys on. Prose sources emit :meth:`~osint_benchmark.schema.Document.to_json`; tabular
+    ones emit their own shape, since forcing a sanctions listing into a Document would
+    invent a document that does not exist.
 
     The sidecar is written last, so a file without one is a run that died rather than a
     projection nobody documented.
@@ -165,8 +168,8 @@ def write_documents(
     output.parent.mkdir(parents=True, exist_ok=True)
     count = 0
     with output.open("w", encoding="utf-8") as handle:
-        for document in documents:
-            handle.write(canonical(document.to_json()) + "\n")
+        for record in records:
+            handle.write(canonical(record) + "\n")
             count += 1
     write_provenance(output, provenance, rows_in=rows_in, rows_out=count)
     return count

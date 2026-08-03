@@ -36,7 +36,10 @@ CONTENT_SHA = "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03"
 def _source(documents=()):
     """Return a source whose parser yields fixed documents."""
     return Source(
-        name="demo", kind="private", parse=lambda raw: iter(documents), projection=PROJECTION
+        name="demo",
+        kind="private",
+        parse=lambda raw: (d.to_json() for d in documents),
+        projection=PROJECTION,
     )
 
 

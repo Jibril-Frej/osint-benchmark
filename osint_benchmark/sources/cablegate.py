@@ -154,10 +154,10 @@ def to_document(fields: dict[str, str]) -> Document:
     )
 
 
-def parse(raw_dir: Path) -> Iterator[Document]:
-    """Yield every cable in the dump as a document."""
+def parse(raw_dir: Path) -> Iterator[dict]:
+    """Yield every cable in the dump as a document record."""
     for match, text in iter_records(raw_dir / "cablegate" / FILENAME):
-        yield to_document(parse_cable(match, text))
+        yield to_document(parse_cable(match, text)).to_json()
 
 
 SOURCE = Source(name="cablegate", kind="private", parse=parse, projection=PROJECTION)
