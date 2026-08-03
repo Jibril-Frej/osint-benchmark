@@ -1,7 +1,10 @@
 # Architecture
 
-> **This is a plan, not a description. Nothing here is implemented yet.** Where a stage
-> already works in the previous project, that is stated and the files are named.
+> **Status, 2026-08-04.** All nine steps are implemented and run end to end; see the
+> README for how. Two of them — 06 generate and 07 necessity — have only been run with a
+> scripted stand-in, never with a served model, so they are the least proven. Entity
+> linking has been run with a dictionary matcher, not ReFinED. Dodis, and the Wikidata
+> subset that a retrieval surface would need, are not implemented.
 
 ## What the repo produces
 
