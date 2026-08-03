@@ -19,3 +19,8 @@ __pycache__/
 .DS_Store
 .idea/
 .vscode/
+
+# Agent instructions and notes: local working context, not part of the benchmark.
+.claude/
+CLAUDE.md
+AGENTS.md
