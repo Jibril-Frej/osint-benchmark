@@ -1,0 +1,17 @@
+# Corpora and generated questions are never committed: they are large, and the
+# source licences differ per corpus.
+data/
+*.jsonl
+*.jsonl.gz
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
