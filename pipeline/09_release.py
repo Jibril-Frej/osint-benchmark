@@ -35,6 +35,14 @@ def main(argv: list[str] | None = None) -> int:
     """Freeze the reviewed questions into a versioned release."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--version", default="v1")
+    parser.add_argument(
+        "--no-fingerprints",
+        action="store_true",
+        help=(
+            "skip recomputing the corpus fingerprints. A real release wants them, but "
+            "hashing GDELT's 91.6M events takes minutes and a smoke run does not need it"
+        ),
+    )
     args = parser.parse_args(argv)
 
     items_dir = paths.data_dir() / "items"
@@ -46,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(f"no items in {items_dir}: run pipeline/06_generate.py first")
 
     items = load_items(source)
-    corpora = publish_fingerprints()
+    corpora = {} if args.no_fingerprints else publish_fingerprints()
     out_dir = paths.ROOT / "releases" / args.version
     sheet = freeze.freeze(items, corpora, out_dir)
 

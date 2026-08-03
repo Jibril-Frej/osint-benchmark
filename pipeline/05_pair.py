@@ -16,18 +16,20 @@ import argparse
 
 from osint_benchmark import paths
 from osint_benchmark.artifacts import Provenance, read_jsonl, write_records
+from osint_benchmark.generate.evidence import linked_sources
 from osint_benchmark.pair import join
-from osint_benchmark.sources import ALL, base, get_source
+from osint_benchmark.sources import base, get_source
 
 
-def document_dates() -> dict[str, str | None]:
-    """Return ``doc_id -> date`` across every built corpus."""
+def document_dates(sources: list[str]) -> dict[str, str | None]:
+    """Return ``doc_id -> date`` for the given corpora."""
     dates: dict[str, str | None] = {}
-    for name in ALL:
+    for name in sources:
         output = base.output_path(get_source(name))
-        if output.exists():
-            for row in read_jsonl(output):
-                dates[row["doc_id"]] = row.get("date")
+        if not output.exists():
+            continue
+        for row in read_jsonl(output):
+            dates[row["doc_id"]] = row.get("date")
     return dates
 
 
@@ -41,7 +43,9 @@ def main(argv: list[str] | None = None) -> int:
     if not bridges_path.exists():
         raise SystemExit(f"{bridges_path} is missing: run pipeline/03_graph.py first")
 
-    dates = document_dates()
+    sources = linked_sources()
+    print(f"dating documents from: {', '.join(sources) or 'nothing linked'}")
+    dates = document_dates(sources)
     pairs = join.pair_documents(
         read_jsonl(bridges_path), dates, dates, window_days=args.window_days
     )

@@ -64,6 +64,6 @@ step "8/9 review page"
 uv run python pipeline/08_review.py
 
 step "9/9 release"
-uv run python pipeline/09_release.py --version smoke
+uv run python pipeline/09_release.py --version smoke --no-fingerprints
 
 printf '\nSmoke run complete. Questions are placeholders: steps 6 and 7 ran with a stand-in.\n'

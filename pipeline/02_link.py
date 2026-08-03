@@ -72,14 +72,19 @@ def main(argv: list[str] | None = None) -> int:
         if args.dictionary:
             titles = index
             method = "exact article-title match (no model)"
+            # Unrestricted, single-word titles are unusable: Wikipedia has articles called
+            # "Told" and "Right". Restricted to a handful of known entities the danger is
+            # gone and the requirement only hurts -- "Afghanistan" is one word.
+            min_words = dictionary.MIN_TITLE_WORDS
             if args.restrict_to:
                 other = paths.data_dir() / "links" / f"{args.restrict_to}.jsonl"
                 if not other.exists():
                     raise SystemExit(f"{other} is missing: link {args.restrict_to} first")
                 allowed = {e["qid"] for row in read_jsonl(other) for e in row["entities"]}
                 titles = [row for row in index if row["qid"] in allowed]
+                min_words = 1
                 method += f", restricted to the {len(allowed)} entities {args.restrict_to} names"
-            linker = dictionary.linker(dictionary.build_dictionary(titles))
+            linker = dictionary.linker(dictionary.build_dictionary(titles, min_words=min_words))
             print(f"linking prose by title match over {len(titles)} candidate entities")
         else:
             try:

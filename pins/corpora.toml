@@ -1,0 +1,5 @@
+# What each built corpus hashes to. One line per source: a sha256 over every
+# record in order, and the record count. This is how a rebuilder confirms their
+# corpus is the one the benchmark's answers were written against.
+
+cablegate = { sha256 = "7d291c55e3707156c970b9c0a763df9b2d5656c3d730b5f40f08e47e310aed6b", records = 251287 }
