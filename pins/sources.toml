@@ -439,3 +439,23 @@ filename = "201012.zip"
 url = "http://data.gdeltproject.org/events/201012.zip"
 sha256 = "e3f40cc51a340ef65a29a2c0a5229301289402b7b5d2cd7ae9b121b95e324ede"
 size = 98761333
+
+# The public entity universe: which Wikidata entities have an English Wikipedia article.
+# Both public sources are scoped to this set. Dated dumps age off dumps.wikimedia.org
+# within months, so re-pinning to a newer date is expected -- it is an edit here.
+[wikipedia_index]
+kind = "public"
+
+[[wikipedia_index.origins]]
+filename = "enwiki-20260601-page.sql.gz"
+url = "https://dumps.wikimedia.org/enwiki/20260601/enwiki-20260601-page.sql.gz"
+sha256 = "95423d0876f607f0263dbc5d410a414e692a61b794b15ac80eabb391d2366db3"
+size = 2399380406
+note = "page table: page_id -> title and namespace."
+
+[[wikipedia_index.origins]]
+filename = "enwiki-20260601-page_props.sql.gz"
+url = "https://dumps.wikimedia.org/enwiki/20260601/enwiki-20260601-page_props.sql.gz"
+sha256 = "4d0ad9bac166948281e3fdcfda42c20338067272a4b07ae5127b41e5d6dd61ca"
+size = 454495593
+note = "page_props table: page_id -> Wikidata QID via the wikibase_item property."

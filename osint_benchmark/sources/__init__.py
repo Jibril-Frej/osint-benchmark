@@ -10,7 +10,14 @@ entities, with no symptom beyond filters silently matching nothing.
 
 from __future__ import annotations
 
-from osint_benchmark.sources import cablegate, gdelt, parliament, sanctions, ucdp
+from osint_benchmark.sources import (
+    cablegate,
+    gdelt,
+    parliament,
+    sanctions,
+    ucdp,
+    wikipedia_index,
+)
 from osint_benchmark.sources.base import Source
 
 _SOURCES: dict[str, Source] = {
@@ -21,6 +28,7 @@ _SOURCES: dict[str, Source] = {
         parliament.SOURCE,
         sanctions.SOURCE,
         ucdp.SOURCE,
+        wikipedia_index.SOURCE,
     )
 }
 
