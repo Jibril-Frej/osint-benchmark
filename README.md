@@ -47,10 +47,13 @@ against the published hashes. To build one source instead of all of them, name i
 uv run python pipeline/01_sources.py cablegate
 ```
 
-Expect roughly four minutes for Cablegate on a 10 MB/s connection — three to download,
-one to parse. The step is re-runnable: a file already downloaded is not fetched again,
-and an interrupted download resumes where it stopped, so re-running after a failure costs
-only the work that had not finished.
+Cablegate parses in about 35 seconds; the download is what takes the time, and how long
+depends entirely on the Internet Archive — measured between 1 and 10 MB/s in one sitting,
+so budget anywhere from 3 minutes to half an hour for the 1.7 GB.
+
+The step is re-runnable, which is what makes that variance tolerable: a file already
+downloaded is not fetched again, and an interrupted download resumes from where it
+stopped rather than starting over.
 
 Output:
 
