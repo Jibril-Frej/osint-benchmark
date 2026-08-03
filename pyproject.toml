@@ -1,0 +1,44 @@
+[project]
+name = "osint-benchmark"
+version = "0.1.0"
+description = "Construction of a benchmark whose questions each need one confidential and one public document"
+requires-python = ">=3.13"
+
+# Runtime dependencies are added as each stage is ported, not before -- an
+# unused dependency is a claim that something is implemented.
+#
+# What the stages in the POC repo import, for when they arrive (see
+# docs/target-design.md for which files belong to which stage):
+#   stage 1, entity linking .... refined, truecase, nltk, transformers, torch
+#                                (spacy was the earlier linker; ReFinED replaced it)
+#   stage 1, OCR ............... no committed implementation yet; PaddleOCR won the bake-off
+#   stage 3, event pairing ..... duckdb
+#   stages 4-5, model passes ... httpx
+# faiss, chromadb, vllm and numpy are imported only by the evaluation modules,
+# which stay in the POC repo.
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.7",
+]
+
+# Scripts and modules, not a distributable library: nothing here is meant to be
+# `pip install`-ed. Flip this if that changes.
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
