@@ -24,3 +24,4 @@ __pycache__/
 .claude/
 CLAUDE.md
 AGENTS.md
+releases/

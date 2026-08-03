@@ -33,6 +33,10 @@ from osint_benchmark.artifacts import (
 )
 
 HASH_CHUNK = 1 << 20
+# Wikimedia rejects urllib's default "Python-urllib/3.x" with 403 Forbidden and asks for a
+# descriptive agent naming the project. This was invisible locally, where the dumps were
+# already on disk, and only appeared on a machine that had to fetch them.
+USER_AGENT = "osint-benchmark/0.1 (research; https://github.com/Jibril-Frej/osint-benchmark)"
 HTTP_PARTIAL_CONTENT = 206
 HTTP_RANGE_NOT_SATISFIABLE = 416
 
@@ -328,7 +332,7 @@ def _download(url: str, dest: Path, expected_size: int | None = None) -> None:
     if expected_size is not None and have >= expected_size:
         have = 0
 
-    request = urllib.request.Request(url)
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     if have:
         request.add_header("Range", f"bytes={have}-")
 

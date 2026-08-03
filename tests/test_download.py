@@ -26,6 +26,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):  # noqa: N802 (the name is BaseHTTPRequestHandler's)
         """Answer with the whole body, a partial one, or 416, recording which."""
+        self.server.agents.append(self.headers.get("User-Agent", ""))
         rng = self.headers.get("Range")
         if rng and self.server.honour_range:
             start = int(rng.removeprefix("bytes=").split("-")[0])
@@ -54,7 +55,8 @@ def server():
     """Run a local HTTP server; set ``honour_range`` to choose how it answers."""
     httpd = HTTPServer(("127.0.0.1", 0), _Handler)
     httpd.honour_range = True
-    httpd.served = []  # (status, bytes) per request, so a test can prove what crossed
+    httpd.served = []
+    httpd.agents = []  # the User-Agent of every request, so a test can prove we identify
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     yield httpd
@@ -131,3 +133,20 @@ class TestDownload:
 
         assert dest.read_bytes() == BODY
         assert server.served == [(416, 0), (200, len(BODY))]
+
+
+class TestUserAgent:
+    """Wikimedia refuses urllib's default agent."""
+
+    def test_downloads_identify_the_project(self, server, tmp_path):
+        """A 403 from the dumps server was invisible locally, where the files were present.
+
+        Only a machine that had to fetch them saw it, which is the argument for building
+        from scratch somewhere else.
+        """
+        from osint_benchmark.sources.base import USER_AGENT
+
+        assert "osint-benchmark" in USER_AGENT
+        _download(_url(server), tmp_path / "file", len(BODY))
+
+        assert server.agents and all("osint-benchmark" in a for a in server.agents)
