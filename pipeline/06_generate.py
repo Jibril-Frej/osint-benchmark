@@ -21,7 +21,7 @@ from osint_benchmark import paths
 from osint_benchmark.artifacts import Provenance, read_jsonl
 from osint_benchmark.generate import emit, phrase
 from osint_benchmark.generate.evidence import entity_labels, evidence_texts
-from osint_benchmark.models import settings
+from osint_benchmark.models import settings, stub
 from osint_benchmark.models.backend import ModelUnavailable, llama_server
 
 
@@ -29,20 +29,35 @@ def main(argv: list[str] | None = None) -> int:
     """Draft, verify and emit questions."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--limit", type=int, help="draft from only the first N pairs")
+    parser.add_argument(
+        "--stub",
+        action="store_true",
+        help="run with a scripted stand-in instead of a served model, to exercise the wiring",
+    )
     args = parser.parse_args(argv)
 
     pairs_path = paths.data_dir() / "pairs" / "pairs.jsonl"
     if not pairs_path.exists():
         raise SystemExit(f"{pairs_path} is missing: run pipeline/05_pair.py first")
 
-    try:
-        phraser_settings = settings.load("phraser")
-        judge_settings = settings.load("judge")
-        phraser = llama_server(phraser_settings)
-        judge = llama_server(judge_settings)
-    except ModelUnavailable as exc:
-        print(exc, file=sys.stderr)
-        return 1
+    phraser_settings = settings.load("phraser")
+    judge_settings = settings.load("judge")
+    if args.stub:
+        phraser, judge = stub.phraser(), stub.judge()
+        model_note = "STUB: no model was used. These questions are placeholders."
+        print(model_note, file=sys.stderr)
+    else:
+        try:
+            phraser = llama_server(phraser_settings)
+            judge = llama_server(judge_settings)
+        except ModelUnavailable as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        model_note = (
+            f"Questions and answers written by {phraser_settings.model}, verified against "
+            f"both documents by {judge_settings.model} at {judge_settings.samples} "
+            "samples, unanimous only."
+        )
 
     pairs = list(read_jsonl(pairs_path))
     if args.limit:
@@ -55,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
             entity_labels(),
             phraser,
             judge,
-            judge_samples=judge_settings.samples,
+            judge_samples=1 if args.stub else judge_settings.samples,
         )
     )
 
@@ -73,11 +88,7 @@ def main(argv: list[str] | None = None) -> int:
                 "qid": "provenance.bridge_qid",
             },
             kind="derived",
-            note=(
-                f"Questions and answers written by {phraser_settings.model}, verified "
-                f"against both documents by {judge_settings.model} at "
-                f"{judge_settings.samples} samples, unanimous only."
-            ),
+            note=model_note,
         ),
     )
     print(f"{accepted} accepted, {rejected} rejected of {len(pairs)} pairs -> {out}")

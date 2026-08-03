@@ -21,55 +21,101 @@ import sys
 
 from osint_benchmark import paths
 from osint_benchmark.artifacts import Provenance, read_jsonl, write_records
-from osint_benchmark.link import refined
+from osint_benchmark.link import dictionary, refined, tabular
 from osint_benchmark.sources import base, get_source
 
 PROSE = {"cablegate": "private", "dodis": "private", "parliament": "public"}
-
-
-def entity_set() -> frozenset[str]:
-    """Return the QIDs holding an English Wikipedia article."""
-    index = paths.docs_dir() / "wikipedia_index.jsonl"
-    if not index.exists():
-        raise SystemExit(f"{index} is missing: run pipeline/01_sources.py wikipedia_index first")
-    return frozenset(row["qid"] for row in read_jsonl(index))
+TABULAR = {"sanctions": "public", "ucdp": "public", "gdelt": "public"}
+SIDES = {**PROSE, **TABULAR}
 
 
 def main(argv: list[str] | None = None) -> int:
     """Link the requested sources; return a process exit code."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("sources", nargs="*", help=f"default: all of {', '.join(PROSE)}")
-    parser.add_argument("--limit", type=int, help="link only the first N documents")
+    parser.add_argument("sources", nargs="*", help=f"default: all of {', '.join(SIDES)}")
+    parser.add_argument("--limit", type=int, help="link only N documents")
+    parser.add_argument(
+        "--stride",
+        type=int,
+        default=1,
+        help=(
+            "take every Nth document rather than the first N. The corpora are sorted, so "
+            "the first N cables are all from the 1960s and the first N events are all one "
+            "country -- a biased slice that bridges nothing"
+        ),
+    )
     parser.add_argument("--device", default="cpu")
+    parser.add_argument(
+        "--dictionary",
+        action="store_true",
+        help="link by exact article-title match instead of ReFinED: no model, much worse",
+    )
+    parser.add_argument(
+        "--restrict-to",
+        metavar="SOURCE",
+        help=(
+            "with --dictionary, look only for entities already linked on the other side. "
+            "Matching all 7.5M titles against ALL-CAPS cable text finds a title for almost "
+            "any phrase; restricting to entities the public side names is both far cleaner "
+            "and closer to what a bridge is"
+        ),
+    )
     args = parser.parse_args(argv)
 
-    try:
-        linker = refined.load(device=args.device)
-    except ImportError as exc:
-        print(exc, file=sys.stderr)
-        return 1
-
-    universe = entity_set()
+    index = list(read_jsonl(paths.docs_dir() / "wikipedia_index.jsonl"))
+    universe = frozenset(row["qid"] for row in index)
     print(f"public entity set: {len(universe)} entities with an English article")
 
-    for name in args.sources or list(PROSE):
+    wanted = args.sources or list(SIDES)
+    linker, method = None, ""
+    if any(name in PROSE for name in wanted):
+        if args.dictionary:
+            titles = index
+            method = "exact article-title match (no model)"
+            if args.restrict_to:
+                other = paths.data_dir() / "links" / f"{args.restrict_to}.jsonl"
+                if not other.exists():
+                    raise SystemExit(f"{other} is missing: link {args.restrict_to} first")
+                allowed = {e["qid"] for row in read_jsonl(other) for e in row["entities"]}
+                titles = [row for row in index if row["qid"] in allowed]
+                method += f", restricted to the {len(allowed)} entities {args.restrict_to} names"
+            linker = dictionary.linker(dictionary.build_dictionary(titles))
+            print(f"linking prose by title match over {len(titles)} candidate entities")
+        else:
+            try:
+                linker = refined.load(device=args.device)
+            except ImportError as exc:
+                print(exc, file=sys.stderr)
+                return 1
+            method = "ReFinED"
+
+    for name in wanted:
         source = get_source(name)
-        documents = read_jsonl(base.output_path(source))
+        records = read_jsonl(base.output_path(source))
+        if args.stride > 1:
+            records = (row for i, row in enumerate(records) if i % args.stride == 0)
         if args.limit:
-            documents = (row for _, row in zip(range(args.limit), documents, strict=False))
+            records = (row for _, row in zip(range(args.limit), records, strict=False))
+
+        if name in PROSE:
+            how = method
+            rows_iter = refined.link_documents(records, linker, PROSE[name], universe)
+        else:
+            how = "name reconciliation against the live Wikidata endpoint"
+            rows_iter = tabular.link_records(records, name, TABULAR[name], universe)
 
         output = paths.data_dir() / "links" / f"{name}.jsonl"
         rows = write_records(
             output,
-            refined.link_documents(documents, linker, PROSE[name], universe),
+            rows_iter,
             Provenance(
-                source=f"{name} documents linked by ReFinED",
+                source=f"{name} linked by {how}",
                 source_fields=("doc_id", "text"),
                 kept={"doc_id": "doc_id", "text": "entities (mentions resolved from it)"},
                 kind="index",
                 note=(
-                    f"Confidence floor {refined.DEFAULT_CONFIDENCE}, filtered to entities "
-                    "holding an English Wikipedia article."
+                    f"Linked by {how}, filtered to entities holding an English "
+                    "Wikipedia article."
                     + (f" Limited to the first {args.limit} documents." if args.limit else "")
                 ),
             ),

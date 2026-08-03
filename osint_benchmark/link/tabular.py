@@ -1,0 +1,87 @@
+"""Link the sources that carry names rather than prose.
+
+A sanctions listing has a person's name; a UCDP event has a country and an actor. There is
+no text to read, so there is no linker to run — the name is looked up.
+
+This is the other half of step 2, and leaving it out is what made the public side of the
+graph empty in the first smoke run: the parliamentary record is German, so an
+English-title matcher finds nothing in it, and every other public source is tabular.
+
+Conservative on purpose. A candidate must match the name exactly and be in the public
+entity set; an ambiguous name resolving to several entities is left unresolved rather than
+guessed at. A sanctions list is exactly where a false match is expensive, and most
+sanctioned individuals genuinely have no Wikidata entity.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Iterable, Iterator
+
+from osint_benchmark.link.reconcile import by_label
+
+# Where each tabular source keeps the names worth resolving, and what kind of thing those
+# names denote. The type constraint is what makes a name usable: "Afghanistan" alone
+# returns thirty entities -- films, ships, historical states -- and picking among them
+# would be guessing. Constrained to a country, it returns the country.
+NAME_FIELDS = {
+    "sanctions": ("names",),
+    "ucdp": ("side_a", "side_b", "country"),
+    "gdelt": ("actor1_name", "actor2_name"),
+}
+
+KINDS = {
+    # country, sovereign state, state
+    "ucdp": ("Q6256", "Q3624078", "Q7275"),
+    "gdelt": ("Q6256", "Q3624078", "Q7275", "Q43229"),
+    # human, organisation, business
+    "sanctions": ("Q5", "Q43229", "Q4830453"),
+}
+
+
+def names_in(record: dict, fields: Iterable[str]) -> list[str]:
+    """Return the names a record carries, from list-valued or scalar fields."""
+    found: list[str] = []
+    for field in fields:
+        value = record.get(field)
+        if isinstance(value, list):
+            found.extend(str(v).strip() for v in value if str(v).strip())
+        elif isinstance(value, str) and value.strip():
+            found.append(value.strip())
+    return found
+
+
+def link_records(
+    records: Iterable[dict],
+    source: str,
+    side: str,
+    entity_set: frozenset[str] | set[str],
+    resolve: Callable[..., dict[str, list[str]]] = by_label,
+) -> Iterator[dict]:
+    """Yield one link row per record, resolving its names in a single batched pass.
+
+    Records are read into memory because the names have to be collected before they can be
+    resolved in batches — one query per record would be thousands of round trips. These
+    sources are the small ones, so that is affordable; the corpora that are not small carry
+    prose and go through a linker instead.
+    """
+    rows = list(records)
+    fields = NAME_FIELDS.get(source, ("name",))
+    wanted = {name for row in rows for name in names_in(row, fields)}
+    resolved = resolve(sorted(wanted), KINDS.get(source, ())) if wanted else {}
+
+    for row in rows:
+        entities = []
+        seen: set[str] = set()
+        for name in names_in(row, fields):
+            candidates = [q for q in resolved.get(name, []) if q in entity_set]
+            # An ambiguous name is not a resolution. Guessing is how a sanctions listing
+            # ends up attached to the wrong person.
+            if len(candidates) != 1 or candidates[0] in seen:
+                continue
+            seen.add(candidates[0])
+            entities.append({"qid": candidates[0], "surface_form": name, "confidence": 1.0})
+        yield {
+            "doc_id": row["doc_id"],
+            "side": side,
+            "entities": sorted(entities, key=lambda e: e["qid"]),
+        }

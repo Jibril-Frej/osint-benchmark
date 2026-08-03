@@ -18,6 +18,7 @@ genuinely have no Wikidata entity.
 from __future__ import annotations
 
 import json
+import re
 import urllib.parse
 import urllib.request
 from collections.abc import Callable, Iterable
@@ -50,9 +51,18 @@ def sparql(query: str, endpoint: str = DEFAULT_ENDPOINT, timeout: float = 60.0) 
         return json.loads(response.read())["results"]["bindings"]
 
 
+QID_ONLY = re.compile(r"^Q\d+$")
+
+
 def _qid(binding: dict, name: str = "s") -> str:
-    """Return the QID from a binding, stripped of its entity prefix."""
-    return binding[name]["value"].rsplit("/", 1)[-1]
+    """Return the QID from a binding, or empty if it is not an item.
+
+    ``rdfs:label`` matches lexemes and their senses too -- "Afghanistan" returns ten
+    ``L…-S1`` ids alongside the entities. A lexeme is a word, not a thing anyone can ask a
+    question about.
+    """
+    identifier = binding[name]["value"].rsplit("/", 1)[-1]
+    return identifier if QID_ONLY.match(identifier) else ""
 
 
 def by_code(scheme: str, codes: Iterable[str], query: Query = sparql) -> dict[str, str]:
@@ -101,7 +111,9 @@ def by_label(
         if kind_values:
             where += f" VALUES ?k {{ {kind_values} }} ?s wdt:P31 ?k ."
         for row in query(f"SELECT DISTINCT ?s ?l WHERE {{ {where} }}"):
-            found.setdefault(row["l"]["value"], []).append(_qid(row))
+            qid = _qid(row)
+            if qid:
+                found.setdefault(row["l"]["value"], []).append(qid)
     return found
 
 

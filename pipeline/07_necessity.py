@@ -21,7 +21,7 @@ import sys
 from osint_benchmark import paths
 from osint_benchmark.artifacts import Provenance, write_records
 from osint_benchmark.generate.evidence import evidence_texts
-from osint_benchmark.models import settings
+from osint_benchmark.models import settings, stub
 from osint_benchmark.models.backend import ModelUnavailable, llama_server
 from osint_benchmark.necessity import ablate
 from osint_benchmark.release.load import load_items
@@ -31,14 +31,28 @@ def main(argv: list[str] | None = None) -> int:
     """Measure necessity over the accepted questions."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--control", action="store_true", help="check the solver is not broken")
+    parser.add_argument(
+        "--stub",
+        action="store_true",
+        help="run with a scripted stand-in instead of a served model, to exercise the wiring",
+    )
     args = parser.parse_args(argv)
 
-    try:
-        solver_settings = settings.load("solver")
-        solver = llama_server(solver_settings)
-    except ModelUnavailable as exc:
-        print(exc, file=sys.stderr)
-        return 1
+    solver_settings = settings.load("solver")
+    if args.stub:
+        solver = stub.solver()
+        model_note = "STUB: no model was used. These flags are placeholders."
+        print(model_note, file=sys.stderr)
+    else:
+        try:
+            solver = llama_server(solver_settings)
+        except ModelUnavailable as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        model_note = (
+            f"Necessity measured by {solver_settings.model}: closed-book, public-only and "
+            "private-only. Recorded, never used to drop an item."
+        )
 
     if args.control:
         ok = ablate.control(solver)
@@ -68,10 +82,7 @@ def main(argv: list[str] | None = None) -> int:
                 "evidence": "evidence",
             },
             kind="derived",
-            note=(
-                f"Necessity measured by {solver_settings.model}: closed-book, public-only "
-                "and private-only. Recorded, never used to drop an item."
-            ),
+            note=model_note,
         ),
     )
     needs_both = sum(1 for i in measured if i.necessity.needs_both)
