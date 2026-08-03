@@ -1,8 +1,4 @@
-"""Check that the project skeleton is wired up.
-
-Placeholder so `uv run pytest` exercises something before any stage is ported; delete
-it once real tests exist.
-"""
+"""Check that the project skeleton is wired up."""
 
 from __future__ import annotations
 
@@ -19,8 +15,15 @@ def test_pyproject_targets_the_supported_python():
     assert config["tool"]["ruff"]["target-version"] == "py313"
 
 
-def test_src_is_on_the_import_path():
-    """`pythonpath = ["src"]` puts the source tree on sys.path for the suite."""
-    import sys
+def test_the_package_is_installed_rather_than_path_hacked():
+    """`uv sync` installs the package, so the numbered pipeline files can just import it.
 
-    assert str(ROOT / "src") in sys.path
+    This is what lets `pipeline/01_sources.py` run from any directory without the
+    `sys.path.insert` the previous project's scripts needed.
+    """
+    config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert config["tool"]["uv"]["package"] is True
+
+    import osint_benchmark
+
+    assert osint_benchmark.__file__ is not None
