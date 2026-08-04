@@ -12,6 +12,7 @@ this; these tests are what keep it from having to be.
 from __future__ import annotations
 
 import threading
+import urllib.error
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
@@ -27,6 +28,15 @@ class _Handler(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802 (the name is BaseHTTPRequestHandler's)
         """Answer with the whole body, a partial one, or 416, recording which."""
         self.server.agents.append(self.headers.get("User-Agent", ""))
+        if getattr(self.server, "always_404", False):
+            self.server.served.append((404, 0))
+            self.send_error(404)
+            return
+        if getattr(self.server, "fail_times", 0) > 0:
+            self.server.fail_times -= 1
+            self.server.served.append((500, 0))
+            self.send_error(500)
+            return
         rng = self.headers.get("Range")
         if rng and self.server.honour_range:
             start = int(rng.removeprefix("bytes=").split("-")[0])
@@ -56,7 +66,9 @@ def server():
     httpd = HTTPServer(("127.0.0.1", 0), _Handler)
     httpd.honour_range = True
     httpd.served = []
-    httpd.agents = []  # the User-Agent of every request, so a test can prove we identify
+    httpd.agents = []
+    httpd.fail_times = 0
+    httpd.always_404 = False  # the User-Agent of every request, so a test can prove we identify
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     yield httpd
@@ -150,3 +162,31 @@ class TestUserAgent:
         _download(_url(server), tmp_path / "file", len(BODY))
 
         assert server.agents and all("osint-benchmark" in a for a in server.agents)
+
+
+class TestRetry:
+    """A flaky answer must not kill an unattended job."""
+
+    def test_a_transient_failure_is_retried(self, server, tmp_path, monkeypatch):
+        """archive.org redirects to a storage node that returns 500 often enough to matter.
+
+        The first batch job died 13 seconds in for exactly this.
+        """
+        monkeypatch.setattr("osint_benchmark.sources.base.BACKOFF_SECONDS", 0)
+        server.fail_times = 2
+        dest = tmp_path / "file"
+
+        _download(_url(server), dest, len(BODY))
+
+        assert dest.read_bytes() == BODY
+        assert [s for s, _ in server.served if s == 500] == [500, 500]
+
+    def test_a_permanent_failure_is_not_retried(self, server, tmp_path, monkeypatch):
+        """Retrying a 404 only wastes time."""
+        monkeypatch.setattr("osint_benchmark.sources.base.BACKOFF_SECONDS", 0)
+        server.always_404 = True
+
+        with pytest.raises(urllib.error.HTTPError):
+            _download(_url(server), tmp_path / "file", len(BODY))
+
+        assert len([s for s, _ in server.served if s == 404]) == 1

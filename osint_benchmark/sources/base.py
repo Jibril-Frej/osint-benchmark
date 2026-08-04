@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import shutil
+import time
 import tomllib
 import urllib.error
 import urllib.request
@@ -39,6 +40,12 @@ HASH_CHUNK = 1 << 20
 USER_AGENT = "osint-benchmark/0.1 (research; https://github.com/Jibril-Frej/osint-benchmark)"
 HTTP_PARTIAL_CONTENT = 206
 HTTP_RANGE_NOT_SATISFIABLE = 416
+# Answers that mean "try again", not "this will never work". archive.org redirects to a
+# storage node and that node returns 500 often enough to kill an unattended job on the
+# first attempt -- which is exactly what happened to the first batch run.
+TRANSIENT_STATUS = frozenset({429, 500, 502, 503, 504})
+RETRIES = 5
+BACKOFF_SECONDS = 4
 
 
 class SourceUnavailable(RuntimeError):
@@ -337,7 +344,7 @@ def _download(url: str, dest: Path, expected_size: int | None = None) -> None:
         request.add_header("Range", f"bytes={have}-")
 
     try:
-        response = urllib.request.urlopen(request)  # noqa: S310
+        response = _open_with_retry(request)
     except urllib.error.HTTPError as exc:
         if have and exc.code == HTTP_RANGE_NOT_SATISFIABLE:
             # The partial does not belong to this file. Drop it and start over.
@@ -353,6 +360,27 @@ def _download(url: str, dest: Path, expected_size: int | None = None) -> None:
         with partial.open("ab" if resuming else "wb") as handle:
             shutil.copyfileobj(response, handle)
     partial.replace(dest)
+
+
+def _open_with_retry(request: urllib.request.Request, retries: int = RETRIES):
+    """Open a request, retrying the failures that are worth retrying.
+
+    A transient status or a dropped connection is retried with linear back-off; anything
+    else is raised immediately, because retrying a 404 just wastes time. The last failure
+    is re-raised so the caller sees the real reason rather than a generic one.
+    """
+    last: Exception | None = None
+    for attempt in range(retries):
+        try:
+            return urllib.request.urlopen(request)  # noqa: S310
+        except urllib.error.HTTPError as exc:
+            if exc.code not in TRANSIENT_STATUS:
+                raise
+            last = exc
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
+            last = exc
+        time.sleep(BACKOFF_SECONDS * (attempt + 1))
+    raise last if last else RuntimeError("download failed with no error recorded")
 
 
 def _check_raw(source: Source, origin: Origin, path: Path) -> None:
