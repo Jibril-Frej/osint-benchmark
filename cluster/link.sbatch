@@ -79,6 +79,12 @@ uv run python -c "import nltk; nltk.download('punkt', quiet=True); nltk.download
 uv run python -c "import truecase; print(truecase.get_true_case('THE SECRETARY MET RICE'))"
 uv run pytest -q
 
+echo "=== does the linker actually build? ==="
+# Before any corpus is downloaded. Importing ReFinED is not the same as loading a model:
+# job 13338 imported it fine, spent 24 minutes fetching corpora, and then failed building
+# the tokenizer. This check needs no data and settles it in three minutes.
+uv run python pipeline/02_link.py --check --device cuda
+
 echo "=== 1/5 sources ==="
 uv run python pipeline/01_sources.py cablegate sanctions "$INDEX"
 

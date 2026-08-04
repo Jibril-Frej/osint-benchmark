@@ -31,6 +31,29 @@ TABULAR = {"sanctions": "public", "ucdp": "public", "gdelt": "public"}
 SIDES = {**PROSE, **TABULAR}
 
 
+# A sentence in the shape the linker meets: a cable, upper-cased, opening on its routing
+# preamble. If the entities in it come back, the environment is sound.
+CHECK_CABLE = (
+    "VZCZCXRO1234\nRR RUEHWEB\nSUBJECT: MEETING\n\n"
+    "1. (C) THE AMBASSADOR MET SIEMENS AND THE INTERNATIONAL ATOMIC ENERGY AGENCY "
+    "IN VIENNA ON 3 MARCH.\nSMITH"
+)
+
+
+def check(device: str) -> int:
+    """Build the linker and link one sentence; return a process exit code."""
+    try:
+        linker = refined.load(device=device)
+    except ImportError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    text = refined.prepare(CHECK_CABLE)
+    print(f"prepared: {text!r}")
+    for mention in linker([text])[0]:
+        print(f"  {mention.qid:<12} {mention.confidence:.3f}  {mention.surface_form}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Link the requested sources; return a process exit code."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -67,7 +90,20 @@ def main(argv: list[str] | None = None) -> int:
         default="wikipedia_index",
         help="which entity index to scope to; wikipedia_index_simple is the small one",
     )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help=(
+            "load the linker, link one sentence and exit. Run this first: building the "
+            "model is where the install actually fails, and it needs no corpora, so a "
+            "broken environment costs three minutes rather than the half hour of "
+            "downloads that would otherwise come before it"
+        ),
+    )
     args = parser.parse_args(argv)
+
+    if args.check:
+        return check(args.device)
 
     index_path = paths.docs_dir() / f"{args.index}.jsonl"
     if not index_path.exists():

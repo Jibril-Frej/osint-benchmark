@@ -89,6 +89,45 @@ class TestLinkDocuments:
         assert [e["qid"] for e in row["entities"]] == ["Q1", "Q3"]
 
 
+class TestRebind:
+    """Patching a dependency's function is only half of patching it."""
+
+    def test_every_module_that_imported_the_name_is_updated(self):
+        """``from x import f`` copies the function into the importer's namespace.
+
+        Replacing it only where it was defined leaves every existing importer calling the
+        original -- a patch that appears to apply and does nothing.
+        """
+        from types import SimpleNamespace
+
+        from osint_benchmark.link.refined import rebind
+
+        def original():
+            return "old"
+
+        def replacement():
+            return "new"
+
+        defining = SimpleNamespace(get_tokenizer=original)
+        importing = SimpleNamespace(get_tokenizer=original)
+        unrelated = SimpleNamespace(get_tokenizer=len)
+
+        replaced = rebind([defining, importing, unrelated], "get_tokenizer", original, replacement)
+
+        assert replaced == 2
+        assert defining.get_tokenizer is replacement
+        assert importing.get_tokenizer is replacement
+        assert unrelated.get_tokenizer is len
+
+    def test_patching_nothing_is_reported_as_nothing(self):
+        """A zero here means the upstream function moved and the patch is now a no-op."""
+        from types import SimpleNamespace
+
+        from osint_benchmark.link.refined import rebind
+
+        assert rebind([SimpleNamespace()], "get_tokenizer", len, str) == 0
+
+
 class TestInstallHint:
     """Two unrelated failures look identical from the outside."""
 
