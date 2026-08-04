@@ -98,9 +98,18 @@ because prompts carry corpus text and replies carry gold answers.
 On Slurm, one job does the lot: clone, install, serve, run, tear down.
 
 ```bash
-sbatch --partition=<p> --qos=<q> cluster/smoke.sbatch                 # CPU, stand-in models
-sbatch --partition=<p> --qos=<q> --gpus=<type> cluster/smoke_gpu.sbatch   # a real model
+sbatch --partition=<p> --qos=<q> cluster/smoke.sbatch                    # CPU, stand-in models
+sbatch --partition=<p> --qos=<q> --gpus=<type> cluster/smoke_gpu.sbatch  # a real model
+sbatch --partition=<p> --qos=<q> --gpus=a100:2 cluster/generate.sbatch   # corpora to questions
 ```
+
+`generate.sbatch` uses [`config/qwq/`](config/qwq/), which serves one model in all three
+roles. That makes the judge the same model as the phraser — read its verdicts as a wiring
+check, not as evidence.
+
+Give a reasoning model room. `max_tokens` too low truncates the reply inside its `<think>`
+block, before any answer: the run reports questions that were never written and gives no
+reason. Step 6 prints where every lost pair went.
 
 ## Sources
 
