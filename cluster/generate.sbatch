@@ -27,7 +27,14 @@
 # The cache survives as long as jobs land on the same node; on a different one they
 # download again. That is the price of not touching NFS during a run.
 #
-# GPUs are requested at submit time. This needs two: QwQ-32B is ~66 GB in bf16.
+# GPUs are requested at submit time. This needs two: QwQ-32B is ~66 GB in bf16. If tensor
+# parallelism proves unreliable here, the fallback is one GPU with --quantization fp8,
+# which halves the weights to ~33 GB and removes the cross-worker collectives entirely at
+# some cost in fidelity.
+#
+# --disable-custom-all-reduce is set alongside the loopback interface variables below.
+# Either alone may be enough; both are cheap, and the failure they prevent costs 40
+# minutes to observe.
 #
 # Usage:
 #   sbatch --partition=<p> --qos=<q> --gpus=a100:2 cluster/generate.sbatch
@@ -52,6 +59,11 @@ export OSINT_RAW="$CACHE/raw" HF_HOME="$CACHE/hf"
 export TORCH_HOME="$WORK/torch" NLTK_DATA="$WORK/nltk"
 export TRANSFORMERS_VERBOSITY=error
 export NLTK_DISABLE_IMPORT_SECURITY=1
+# Both tensor-parallel workers are on this one node, so their collectives go over
+# loopback. Left to itself gloo enumerates the node's interfaces and can pick net1, which
+# has no IPv4 address: job 13344 sat in a barrier for its full 30-minute timeout and died
+# with "Application timeout caused pair closure", 40 minutes after the weights had loaded.
+export GLOO_SOCKET_IFNAME=lo NCCL_SOCKET_IFNAME=lo VLLM_HOST_IP=127.0.0.1
 
 echo "node    $(hostname)"
 echo "model   $MODEL"
@@ -132,6 +144,7 @@ du -sh "$HF_HOME/hub" 2>/dev/null || true
 "$VLLM_PY" -m vllm.entrypoints.openai.api_server \
   --model "$MODEL" --host 127.0.0.1 --port "$PORT" \
   --tensor-parallel-size 2 --max-model-len 8192 --gpu-memory-utilization 0.92 \
+  --disable-custom-all-reduce \
   > "$WORK/vllm.log" 2>&1 &
 SERVER_PID=$!
 
