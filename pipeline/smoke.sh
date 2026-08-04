@@ -21,6 +21,10 @@ WORK="${1:-${OSINT_DATA:-./data}}"
 export OSINT_DATA="$WORK"
 LIMIT="${SMOKE_LIMIT:-2000}"
 INDEX="${SMOKE_INDEX:-wikipedia_index_simple}"
+# SMOKE_STUB=0 runs steps 6 and 7 against a real served model instead of the stand-in.
+# It needs OSINT_MODEL_ENDPOINT set; see cluster/smoke_gpu.sbatch.
+STUB_FLAG="--stub"
+[ "${SMOKE_STUB:-1}" = "0" ] && STUB_FLAG=""
 
 step() { printf '\n=== %s ===\n' "$1"; }
 
@@ -53,11 +57,11 @@ uv run python pipeline/04_public.py --index "$INDEX" --limit 25
 step "5/9 pair"
 uv run python pipeline/05_pair.py
 
-step "6/9 generate (STUB: placeholder questions)"
-uv run python pipeline/06_generate.py --stub --limit 25
+step "6/9 generate"
+uv run python pipeline/06_generate.py $STUB_FLAG --limit 25
 
-step "7/9 necessity (STUB: placeholder flags)"
-uv run python pipeline/07_necessity.py --stub
+step "7/9 necessity"
+uv run python pipeline/07_necessity.py $STUB_FLAG
 
 step "8/9 review page"
 uv run python pipeline/08_review.py
