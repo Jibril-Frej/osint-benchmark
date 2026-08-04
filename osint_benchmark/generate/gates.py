@@ -43,19 +43,32 @@ ATTRIBUTE_DENYLIST = (
     "population of",
 )
 
-# Phrases that point at the evidence instead of asking about the world.
+# Phrases that point at the evidence instead of asking about the world. A real run got
+# "What is the connection between Cameroon and Canada as described in the two documents?"
+# past the first version of this list, which only knew about "the document states" and
+# "according to the cable" -- so the phrasing matters less than the *reference*, and what
+# is matched now is any mention of the documents themselves.
 SOURCE_ATTRIBUTION = (
     "the cable",
     "the cables",
-    "according to the cable",
-    "the document states",
-    "the document says",
-    "the report states",
-    "the record states",
-    "the article states",
-    "as reported in",
-    "in the telegram",
+    "the telegram",
     "the dispatch",
+    "the document",
+    "the documents",
+    "both documents",
+    "two documents",
+    "the report",
+    "the record",
+    "the article",
+    "the passage",
+    "the text",
+    "the excerpt",
+    "as reported in",
+    "as described in",
+    "as stated in",
+    "as mentioned in",
+    "according to the",
+    "in the source",
 )
 
 MIN_ANSWER_CHARS = 2

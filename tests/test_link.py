@@ -136,3 +136,25 @@ class TestReconcile:
         reconcile.by_label([f"name{i}" for i in range(130)], query=query, batch=60)
 
         assert len(seen) == 3
+
+
+class TestNameLength:
+    """A single given name identifies nobody."""
+
+    def test_one_word_person_names_are_not_resolved(self):
+        """Single names like Muhammad and Khalid each resolved to one entity, and bridged.
+
+        That is how a cable mentioning a common name gets paired with an unrelated
+        listing.
+        """
+        from osint_benchmark.link.tabular import names_in
+
+        record = {"names": ["Muhammad", "Ali Abdullah Saleh"]}
+
+        assert names_in(record, ("names",), min_words=2) == ["Ali Abdullah Saleh"]
+
+    def test_single_word_names_are_fine_for_other_sources(self):
+        """Countries and organisations are legitimately one word."""
+        from osint_benchmark.link.tabular import names_in
+
+        assert names_in({"country": "Afghanistan"}, ("country",)) == ["Afghanistan"]

@@ -17,6 +17,7 @@ import argparse
 from osint_benchmark import paths
 from osint_benchmark.artifacts import Provenance, read_jsonl, write_records
 from osint_benchmark.generate.evidence import linked_sources
+from osint_benchmark.graph import entity_types
 from osint_benchmark.pair import join
 from osint_benchmark.sources import base, get_source
 
@@ -37,6 +38,21 @@ def main(argv: list[str] | None = None) -> int:
     """Pair private documents with public records over their shared entities."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--window-days", type=int, default=join.DEFAULT_WINDOW_DAYS)
+    parser.add_argument(
+        "--max-pairs-per-entity",
+        type=int,
+        default=50,
+        help="cap the pairs one entity may produce; 42 bridges once produced 30,416 pairs",
+    )
+    parser.add_argument(
+        "--any-entity-type",
+        action="store_true",
+        help=(
+            "pair on every bridge, including countries. The first real run bridged only on "
+            "countries and asked what connects Cameroon and Canada; the answer was that "
+            "both documents mention international relations"
+        ),
+    )
     args = parser.parse_args(argv)
 
     bridges_path = paths.data_dir() / "graph" / "bridges.jsonl"
@@ -46,8 +62,32 @@ def main(argv: list[str] | None = None) -> int:
     sources = linked_sources()
     print(f"dating documents from: {', '.join(sources) or 'nothing linked'}")
     dates = document_dates(sources)
+    bridges = list(read_jsonl(bridges_path))
+
+    if args.any_entity_type:
+        note = "Pairs formed on every bridge, including countries."
+    else:
+        facts_path = paths.data_dir() / "facts" / "wikidata.jsonl"
+        if not facts_path.exists():
+            raise SystemExit(f"{facts_path} is missing: run pipeline/04_public.py first")
+        facts = list(read_jsonl(facts_path))
+        counts = entity_types.summarise(facts)
+        allowed = entity_types.bridgeable_qids(facts)
+        before = len(bridges)
+        bridges = [b for b in bridges if b["qid"] in allowed]
+        print(f"entity types: {counts}; {len(bridges)} of {before} bridges may anchor a pair")
+        note = (
+            f"Only entities whose Wikidata class can anchor a question: {counts}. "
+            "Countries and other geography are excluded -- they co-occur with everything "
+            "and so distinguish nothing."
+        )
+
     pairs = join.pair_documents(
-        read_jsonl(bridges_path), dates, dates, window_days=args.window_days
+        bridges,
+        dates,
+        dates,
+        window_days=args.window_days,
+        max_per_entity=args.max_pairs_per_entity,
     )
 
     output = paths.data_dir() / "pairs" / "pairs.jsonl"
@@ -64,9 +104,10 @@ def main(argv: list[str] | None = None) -> int:
             },
             kind="derived",
             note=(
-                f"One row per (private document, public record, shared entity). "
-                f"same_period is a {args.window_days}-day window; days_apart is signed, "
-                "public minus private."
+                f"One row per (private document, public record, shared entity), at most "
+                f"{args.max_pairs_per_entity} per entity. same_period is a "
+                f"{args.window_days}-day window; days_apart is signed, public minus "
+                f"private. {note}"
             ),
         ),
     )

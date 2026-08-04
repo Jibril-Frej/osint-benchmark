@@ -37,7 +37,9 @@ class TestParse:
 
         assert len(records) == 1
         assert records[0]["doc_id"] == "12345"
-        assert set(records[0]) == set(COLUMNS) | {"doc_id"}
+        # date is added alongside, copied from date_start, so the pairing step can compute
+        # intervals -- without it every pair came out undated.
+        assert set(records[0]) == set(COLUMNS) | {"doc_id", "date"}
 
     def test_a_changed_column_set_stops_the_build(self, tmp_path):
         """A later release adding or renaming a column must not pass silently.

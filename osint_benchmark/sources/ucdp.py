@@ -43,7 +43,10 @@ PROJECTION = Projection(
     source_fields=COLUMNS,
     kept=dict.fromkeys(COLUMNS, "kept verbatim"),
     kind="corpus",
-    note="Every column is kept; doc_id is added, copied from id.",
+    note=(
+        "Every column is kept. doc_id is copied from id, and date from date_start so the "
+        "pairing step can compute intervals."
+    ),
 )
 
 
@@ -61,7 +64,11 @@ def parse(raw_dir: Path) -> Iterator[dict]:
                 f"{sorted(set(reader.fieldnames or ()) ^ set(COLUMNS))}"
             )
         for row in reader:
-            yield {"doc_id": row["id"], **row}
+            # date_start is the event's own date. Without copying it to the common `date`
+            # field nothing downstream can tell when the event happened: every pair came
+            # out undated, so same_period was false on all 30,416 of them and the
+            # interval-based question types could not exist.
+            yield {"doc_id": row["id"], "date": row.get("date_start") or None, **row}
 
 
 SOURCE = Source(name="ucdp", kind="public", parse=parse, projection=PROJECTION)

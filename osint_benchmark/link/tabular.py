@@ -38,7 +38,14 @@ KINDS = {
 }
 
 
-def names_in(record: dict, fields: Iterable[str]) -> list[str]:
+# A single given name identifies nobody. "Muhammad" and "Khalid" both resolved to exactly
+# one Wikidata person and became bridges, which is how a cable mentioning a common name
+# ends up paired with an unrelated listing. Names needing this are person-like sources;
+# country and organisation names are frequently one word and legitimately so.
+MIN_NAME_WORDS = {"sanctions": 2}
+
+
+def names_in(record: dict, fields: Iterable[str], min_words: int = 1) -> list[str]:
     """Return the names a record carries, from list-valued or scalar fields."""
     found: list[str] = []
     for field in fields:
@@ -47,7 +54,7 @@ def names_in(record: dict, fields: Iterable[str]) -> list[str]:
             found.extend(str(v).strip() for v in value if str(v).strip())
         elif isinstance(value, str) and value.strip():
             found.append(value.strip())
-    return found
+    return [name for name in found if len(name.split()) >= min_words]
 
 
 def link_records(
@@ -66,13 +73,14 @@ def link_records(
     """
     rows = list(records)
     fields = NAME_FIELDS.get(source, ("name",))
-    wanted = {name for row in rows for name in names_in(row, fields)}
+    min_words = MIN_NAME_WORDS.get(source, 1)
+    wanted = {name for row in rows for name in names_in(row, fields, min_words)}
     resolved = resolve(sorted(wanted), KINDS.get(source, ())) if wanted else {}
 
     for row in rows:
         entities = []
         seen: set[str] = set()
-        for name in names_in(row, fields):
+        for name in names_in(row, fields, min_words):
             candidates = [q for q in resolved.get(name, []) if q in entity_set]
             # An ambiguous name is not a resolution. Guessing is how a sanctions listing
             # ends up attached to the wrong person.

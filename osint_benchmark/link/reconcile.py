@@ -19,11 +19,22 @@ from __future__ import annotations
 
 import json
 import re
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable, Iterable
 
 DEFAULT_ENDPOINT = "https://qlever.dev/api/wikidata"
+# It is somebody else's research service. Batched queries arrive fast enough to earn a 429
+# -- reconciling the sanctions list hit one within five seconds -- so back off when asked
+# and pause between batches rather than going as fast as the network allows.
+TRANSIENT_STATUS = frozenset({429, 500, 502, 503, 504})
+RETRIES = 5
+BACKOFF_SECONDS = 5
+BATCH_PAUSE_SECONDS = 0.5
+
+USER_AGENT = "osint-benchmark/0.1 (research; https://github.com/Jibril-Frej/osint-benchmark)"
 
 PREFIXES = (
     "PREFIX wd: <http://www.wikidata.org/entity/> "
@@ -44,11 +55,37 @@ Query = Callable[[str], list[dict]]
 
 
 def sparql(query: str, endpoint: str = DEFAULT_ENDPOINT, timeout: float = 60.0) -> list[dict]:
-    """Run a SPARQL query and return its result bindings."""
-    url = f"{endpoint}?{urllib.parse.urlencode({'query': PREFIXES + query})}"
-    request = urllib.request.Request(url, headers={"Accept": "application/sparql-results+json"})
-    with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
-        return json.loads(response.read())["results"]["bindings"]
+    """Run a SPARQL query and return its result bindings.
+
+    Retries what is worth retrying. A 429 means slow down, not stop, and the alternative is
+    a linking run that dies partway through and leaves an entity set nobody can tell is
+    incomplete.
+    """
+    # POST, not GET. A batch of sixty long names in a query string overflows the URI limit
+    # and earns a 414 -- which the sanctions list, whose names run to forty characters,
+    # does reliably.
+    request = urllib.request.Request(
+        endpoint,
+        data=urllib.parse.urlencode({"query": PREFIXES + query}).encode(),
+        headers={
+            "Accept": "application/sparql-results+json",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": USER_AGENT,
+        },
+    )
+    last: Exception | None = None
+    for attempt in range(RETRIES):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+                return json.loads(response.read())["results"]["bindings"]
+        except urllib.error.HTTPError as exc:
+            if exc.code not in TRANSIENT_STATUS:
+                raise
+            last = exc
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            last = exc
+        time.sleep(BACKOFF_SECONDS * (attempt + 1))
+    raise RuntimeError(f"{endpoint}: giving up after {RETRIES} attempts") from last
 
 
 QID_ONLY = re.compile(r"^Q\d+$")
@@ -114,6 +151,8 @@ def by_label(
             qid = _qid(row)
             if qid:
                 found.setdefault(row["l"]["value"], []).append(qid)
+        if BATCH_PAUSE_SECONDS:
+            time.sleep(BATCH_PAUSE_SECONDS)
     return found
 
 

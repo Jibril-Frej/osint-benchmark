@@ -78,17 +78,28 @@ def pair_documents(
     private_dates: dict[str, str | None],
     public_dates: dict[str, str | None],
     window_days: int = DEFAULT_WINDOW_DAYS,
+    max_per_entity: int | None = None,
 ) -> Iterator[Pair]:
     """Yield one pair per (private document, public record, shared entity).
 
     One row per triple rather than per entity, so counts mean documents rather than
     entities, and a document naming three shared entities produces three pairs that can be
     judged separately.
+
+    ``max_per_entity`` caps the combinatorics. The product of two document lists grows
+    fast: 42 bridges once produced 30,416 pairs, of which nothing downstream could ever
+    read more than a fraction.
     """
     for bridge in bridges:
         qid = bridge["qid"]
+        emitted = 0
         for private_id in bridge["private"]:
+            if max_per_entity is not None and emitted >= max_per_entity:
+                break
             for public_id in bridge["public"]:
+                if max_per_entity is not None and emitted >= max_per_entity:
+                    break
+                emitted += 1
                 private_date = private_dates.get(private_id)
                 public_date = public_dates.get(public_id)
                 days = interval(private_date, public_date)

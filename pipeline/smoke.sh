@@ -31,7 +31,7 @@ step() { printf '\n=== %s ===\n' "$1"; }
 step "1/9 sources"
 # cablegate is the private leg and there is no smaller one -- 1.7 GB, downloaded once.
 # sanctions and parliament are the small public sources.
-uv run python pipeline/01_sources.py cablegate ucdp
+uv run python pipeline/01_sources.py cablegate sanctions
 
 step "1b/9 the public entity index"
 # simplewiki, not enwiki: 44 MB against 2.85 GB, same tables and the same parser. The real
@@ -43,10 +43,12 @@ step "2/9 link"
 # Private prose by title match (no model); the public side is tabular, so its names are
 # reconciled against the live Wikidata endpoint instead.
 # Public side first: its names are reconciled against the live Wikidata endpoint.
-uv run python pipeline/02_link.py ucdp --index "$INDEX" --limit "$LIMIT" --stride 401
+# sanctions rather than ucdp, because UCDP names countries and a country cannot anchor a
+# question -- it co-occurs with everything. Sanctions names people and organisations.
+uv run python pipeline/02_link.py sanctions --index "$INDEX"
 # Then the private prose, looking only for the entities the public side named. Matching
 # all 7.5M article titles against ALL-CAPS cable text finds a title for almost any phrase.
-uv run python pipeline/02_link.py cablegate --index "$INDEX" --dictionary --restrict-to ucdp --limit "$LIMIT" --stride 53
+uv run python pipeline/02_link.py cablegate --index "$INDEX" --dictionary --restrict-to sanctions --limit "$LIMIT" --stride 11
 
 step "3/9 graph"
 uv run python pipeline/03_graph.py

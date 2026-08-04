@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from osint_benchmark.graph import bridge
+from osint_benchmark.graph import bridge, entity_types
 from osint_benchmark.pair import join
 
 
@@ -143,3 +143,56 @@ class TestPairDocuments:
 
         assert not pair.same_period
         assert pair.days_apart is None
+
+
+class TestEntityTypes:
+    """Which entities may anchor a bridge, and which may never."""
+
+    def test_a_country_may_not_bridge(self):
+        """The first real run bridged only on countries.
+
+        Every question it produced asked what connects two countries, and the answer was
+        that both documents mention international relations. A country co-occurs with
+        everything, so it distinguishes nothing.
+        """
+        assert entity_types.classify({"instance_of": ["Q6256"]}) == "blocked"
+
+    def test_a_person_or_an_organisation_may(self):
+        """Specific enough that two documents naming one are plausibly about the same thing."""
+        assert entity_types.classify({"instance_of": ["Q5"]}) == "bridgeable"
+        assert entity_types.classify({"instance_of": ["Q43229"]}) == "bridgeable"
+
+    def test_blocked_beats_bridgeable(self):
+        """Wikidata models many states as organisations too; they are still countries."""
+        assert entity_types.classify({"instance_of": ["Q43229", "Q3624078"]}) == "blocked"
+
+    def test_an_unclassifiable_entity_is_excluded_by_default(self):
+        """An entity nobody can vouch for is how the country problem returns by another route."""
+        facts = [{"qid": "Q1", "statements": {"instance_of": ["Q999999"]}}]
+
+        assert entity_types.bridgeable_qids(facts) == set()
+        assert entity_types.bridgeable_qids(facts, keep_unknown=True) == {"Q1"}
+
+
+class TestPairCap:
+    """The combinatorics have to be bounded."""
+
+    def test_pairs_per_entity_are_capped(self):
+        """42 bridges once produced 30,416 pairs."""
+        bridges = [
+            {
+                "qid": "Q1",
+                "private": [f"c{i}" for i in range(20)],
+                "public": [f"i{j}" for j in range(20)],
+            }
+        ]
+
+        pairs = list(join.pair_documents(bridges, {}, {}, max_per_entity=25))
+
+        assert len(pairs) == 25
+
+    def test_no_cap_keeps_every_combination(self):
+        """The cap is a choice, not a silent default deep in the code."""
+        bridges = [{"qid": "Q1", "private": ["c1", "c2"], "public": ["i1", "i2"]}]
+
+        assert len(list(join.pair_documents(bridges, {}, {}))) == 4

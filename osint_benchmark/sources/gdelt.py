@@ -78,7 +78,15 @@ def parse(raw_dir: Path) -> Iterator[dict]:
                     if len(row) < len(COLUMNS):
                         continue
                     record = dict(zip(COLUMNS, row, strict=False))
-                    yield {"doc_id": record["event_id"], **record}
+                    # SQLDATE is YYYYMMDD. Left as-is it sorts correctly and parses as
+                    # nothing, so the pairing step reads every event as undated.
+                    raw = record.get("date", "")
+                    iso = (
+                        f"{raw[:4]}-{raw[4:6]}-{raw[6:8]}"
+                        if len(raw) == 8 and raw.isdigit()
+                        else None
+                    )
+                    yield {"doc_id": record["event_id"], "date": iso, **record}
 
 
 SOURCE = Source(name="gdelt", kind="public", parse=parse, projection=PROJECTION, compress=True)

@@ -256,3 +256,32 @@ def _provenance():
     from osint_benchmark.artifacts import Provenance
 
     return Provenance(source="test", source_fields=("a",), kept={"a": "b"}, kind="derived")
+
+
+class TestSourceAttributionAfterTheRealRun:
+    """The phrasings a real model actually produced."""
+
+    def test_as_described_in_the_two_documents_is_caught(self):
+        """This got through the first version of the denylist and was accepted."""
+        leaked = _item(
+            question="What is the connection between Cameroon and Canada as described in "
+            "the two documents?"
+        )
+
+        assert not gates.no_source_attribution(leaked)
+
+    def test_other_ways_of_pointing_at_the_evidence_are_caught(self):
+        """The reference matters, not the particular wording."""
+        for phrasing in (
+            "What does the report say about X?",
+            "According to the record, what happened?",
+            "What is mentioned in both documents about X?",
+            "As stated in the article, who resigned?",
+        ):
+            assert not gates.no_source_attribution(_item(question=phrasing)), phrasing
+
+    def test_an_ordinary_question_still_passes(self):
+        """The gate must not reject everything that mentions a noun."""
+        assert gates.no_source_attribution(
+            _item(question="Which ministry approved the transfer in March 2006?")
+        )
