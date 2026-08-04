@@ -37,7 +37,6 @@ from __future__ import annotations
 
 import os
 import re
-import sys
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 
@@ -242,60 +241,48 @@ def link_documents(
             }
 
 
-def tokenizer_for(transformer_name: str, data_dir: str | None = None, **kwargs):  # noqa: ANN201
-    """Load a tokenizer the way ReFinED means to, rather than the way it does.
+PATCHED = "_osint_drops_add_special_tokens"
+
+
+def without_kwarg(function: Callable, name: str) -> Callable:
+    """Return ``function`` with one keyword argument silently dropped."""
+
+    def wrapper(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+        """Call the wrapped function without the offending keyword."""
+        kwargs.pop(name, None)
+        return function(*args, **kwargs)
+
+    setattr(wrapper, PATCHED, True)
+    return wrapper
+
+
+def patch_tokenizer_loading() -> bool:
+    """Let ReFinED's tokenizers load under a current transformers.
 
     ReFinED passes ``add_special_tokens`` to ``AutoTokenizer.from_pretrained``, which
     forwards unrecognised keywords to the tokenizer's constructor; transformers refuses any
     that collide with a method name, and ``add_special_tokens`` is a method on every
-    tokenizer. So the model cannot load at all, with an ``AttributeError`` twelve frames
-    from anything of ours.
+    tokenizer. The model therefore cannot load at all, and the ``AttributeError`` arrives
+    twelve frames from anything of ours.
 
-    Dropping it is not a workaround. ``add_special_tokens`` is an argument to *encoding*,
-    not to construction — it was never read here, and ReFinED's own default for it is the
-    value the tokenizer would use anyway.
+    Dropping the argument is not a workaround. ``add_special_tokens`` governs *encoding*,
+    not construction — passing it here never did anything.
+
+    The patch goes on ``AutoTokenizer.from_pretrained`` rather than on ReFinED's
+    ``get_tokenizer``, because there are two call sites and only one of them goes through
+    that function: ``data_lookups.py`` calls the tokenizer loader directly. Patching the
+    one cost a cluster job that failed exactly as it had before.
+
+    Returns False if the patch was already applied, so applying it twice is harmless.
     """
     from transformers import AutoTokenizer  # noqa: PLC0415
 
-    path = transformer_name
-    if data_dir is not None and os.path.exists(os.path.join(data_dir, transformer_name)):
-        path = os.path.join(data_dir, transformer_name)
-    return AutoTokenizer.from_pretrained(
-        path,
-        use_fast=kwargs.get("use_fast", True),
-        add_prefix_space=kwargs.get("add_prefix_space", False),
+    if getattr(AutoTokenizer.from_pretrained, PATCHED, False):
+        return False
+    AutoTokenizer.from_pretrained = without_kwarg(
+        AutoTokenizer.from_pretrained, "add_special_tokens"
     )
-
-
-def rebind(modules: Iterable, name: str, original, replacement) -> int:
-    """Replace ``name`` with ``replacement`` in every module that bound ``original``.
-
-    ``from x import f`` copies the function into the importer's namespace, so replacing it
-    in the module that defines it changes nothing for anyone who already imported it —
-    which is how a patch appears to apply and then does nothing at all.
-
-    Returns how many bindings were replaced, so a caller can notice zero.
-    """
-    replaced = 0
-    for module in modules:
-        if getattr(module, name, None) is original:
-            setattr(module, name, replacement)
-            replaced += 1
-    return replaced
-
-
-def patch_tokenizer_loading() -> int:
-    """Make ReFinED's tokenizer load under a current transformers. See :func:`tokenizer_for`.
-
-    Call after ReFinED is imported and before a model is built, so that every module which
-    imported the function by name has already bound it.
-    """
-    from refined.utilities import general_utils  # noqa: PLC0415
-
-    original = general_utils.get_tokenizer
-    if original is tokenizer_for:
-        return 0
-    return rebind(list(sys.modules.values()), "get_tokenizer", original, tokenizer_for)
+    return True
 
 
 def install_hint(exc: ImportError) -> str:
@@ -344,8 +331,7 @@ def load(
     except ImportError as exc:  # pragma: no cover - depends on the environment
         raise ImportError(install_hint(exc)) from exc
 
-    if not patch_tokenizer_loading():
-        print("warning: ReFinED's tokenizer loader was not patched", file=sys.stderr)
+    patch_tokenizer_loading()
     model = Refined.from_pretrained(model_name=model_name, entity_set=entity_set, device=device)
 
     def batch(texts: Sequence[str]) -> list[list[Mention]]:

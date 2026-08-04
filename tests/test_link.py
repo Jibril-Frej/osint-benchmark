@@ -89,43 +89,41 @@ class TestLinkDocuments:
         assert [e["qid"] for e in row["entities"]] == ["Q1", "Q3"]
 
 
-class TestRebind:
-    """Patching a dependency's function is only half of patching it."""
+class TestWithoutKwarg:
+    """ReFinED cannot build a tokenizer under a current transformers without this."""
 
-    def test_every_module_that_imported_the_name_is_updated(self):
-        """``from x import f`` copies the function into the importer's namespace.
+    def test_the_offending_keyword_is_dropped_and_the_rest_survive(self):
+        """Everything else the caller passes still has to arrive."""
+        from osint_benchmark.link.refined import without_kwarg
 
-        Replacing it only where it was defined leaves every existing importer calling the
-        original -- a patch that appears to apply and does nothing.
-        """
-        from types import SimpleNamespace
+        def load(path, use_fast=False, add_special_tokens=None):
+            return (path, use_fast, add_special_tokens)
 
-        from osint_benchmark.link.refined import rebind
+        patched = without_kwarg(load, "add_special_tokens")
 
-        def original():
-            return "old"
+        loaded = patched("roberta", use_fast=True, add_special_tokens=False)
 
-        def replacement():
-            return "new"
+        assert loaded == ("roberta", True, None)
 
-        defining = SimpleNamespace(get_tokenizer=original)
-        importing = SimpleNamespace(get_tokenizer=original)
-        unrelated = SimpleNamespace(get_tokenizer=len)
+    def test_it_is_absent_rather_than_none(self):
+        """Passing None would fail the same way: transformers rejects the key, not a value."""
+        from osint_benchmark.link.refined import without_kwarg
 
-        replaced = rebind([defining, importing, unrelated], "get_tokenizer", original, replacement)
+        seen = {}
 
-        assert replaced == 2
-        assert defining.get_tokenizer is replacement
-        assert importing.get_tokenizer is replacement
-        assert unrelated.get_tokenizer is len
+        def load(**kwargs):
+            seen.update(kwargs)
 
-    def test_patching_nothing_is_reported_as_nothing(self):
-        """A zero here means the upstream function moved and the patch is now a no-op."""
-        from types import SimpleNamespace
+        without_kwarg(load, "add_special_tokens")(add_special_tokens=False, use_fast=True)
 
-        from osint_benchmark.link.refined import rebind
+        assert "add_special_tokens" not in seen
+        assert seen == {"use_fast": True}
 
-        assert rebind([SimpleNamespace()], "get_tokenizer", len, str) == 0
+    def test_a_patched_function_is_recognisable_as_patched(self):
+        """So that applying the patch twice is harmless."""
+        from osint_benchmark.link.refined import PATCHED, without_kwarg
+
+        assert getattr(without_kwarg(len, "x"), PATCHED, False)
 
 
 class TestInstallHint:
