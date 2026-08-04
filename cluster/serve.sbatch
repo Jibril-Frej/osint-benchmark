@@ -21,6 +21,9 @@
 #   OSINT_SERVE_ARGS    extra vLLM arguments, e.g. "--tensor-parallel-size 2 --quantization awq"
 #   OSINT_SERVE_PORT    default 8000
 #
+# The environment running vLLM needs `ninja` on PATH: the inductor backend shells out to
+# it during torch.compile and the wheel does not ship the binary.
+#
 # Slurm directives above are deliberately generic. Partition, QoS and the GPU request
 # differ per site -- some reject a bare count and require a type -- so pass them at submit
 # time:

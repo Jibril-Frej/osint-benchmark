@@ -57,7 +57,10 @@ uv run pytest -q
 echo "=== installing vLLM (node-local, nothing on the shared filesystem) ==="
 uv venv "$WORK/vllm-venv" >/dev/null
 VLLM_PY="$WORK/vllm-venv/bin/python"
-uv pip install --python "$VLLM_PY" -q vllm
+# ninja is a real dependency and not a declared one: vLLM's inductor backend shells out
+# to it during torch.compile, and the wheel does not ship the binary. Without it the
+# engine dies with FileNotFoundError: 'ninja' after the weights have already loaded.
+uv pip install --python "$VLLM_PY" -q vllm ninja
 "$VLLM_PY" -c "import vllm; print('vllm', vllm.__version__)"
 
 SERVER_PID=""
