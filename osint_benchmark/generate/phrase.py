@@ -20,11 +20,22 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 from collections.abc import Iterator
 
 from osint_benchmark.generate.item import Evidence, Item
 from osint_benchmark.models import prompts
-from osint_benchmark.models.backend import Complete, agree, first_word
+from osint_benchmark.models.backend import (
+    Complete,
+    ModelUnavailable,
+    agree,
+    first_word,
+)
+
+# Evidence is truncated to fit the context window. A cable can run to thousands of words
+# and a served model answers a prompt longer than its window with a bare 400, killing the
+# run. Truncating loses the tail of a long document; failing loses the whole run.
+EVIDENCE_CHARS = 6000
 
 ASKERS = (
     "a desk officer preparing a country brief",
@@ -50,6 +61,13 @@ def item_id(pair: dict) -> str:
     return f"{pair['private_id']}|{pair['public_id']}|{pair['qid']}"
 
 
+def clip(text: str, limit: int = EVIDENCE_CHARS) -> str:
+    """Return text bounded to a character budget, marked where it was cut."""
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "\n[... truncated]"
+
+
 def draft(pair: dict, private_text: str, public_text: str, bridge: str, phraser: Complete) -> dict:
     """Ask the model for one question and its answer, as JSON.
 
@@ -58,8 +76,8 @@ def draft(pair: dict, private_text: str, public_text: str, bridge: str, phraser:
     """
     prompt = prompts.render(
         "generate_question",
-        private_evidence=private_text,
-        public_evidence=public_text,
+        private_evidence=clip(private_text),
+        public_evidence=clip(public_text),
         bridge=bridge,
         asker=asker_for(item_id(pair)),
     )
@@ -87,8 +105,8 @@ def verify(item: Item, private_text: str, public_text: str, judge: Complete, sam
     """
     prompt = prompts.render(
         "verify_answer",
-        private_evidence=private_text,
-        public_evidence=public_text,
+        private_evidence=clip(private_text),
+        public_evidence=clip(public_text),
         question=item.question,
         answer=item.answer,
     )
@@ -117,7 +135,13 @@ def build_items(
             continue
 
         bridge = labels.get(pair["qid"], pair["qid"])
-        drafted = draft(pair, private_text, public_text, bridge, phraser)
+        # One unusable pair must not end the run. A model that refuses, times out or is
+        # handed something it cannot process costs that question, not the other 24.
+        try:
+            drafted = draft(pair, private_text, public_text, bridge, phraser)
+        except ModelUnavailable as exc:
+            print(f"  skipped {item_id(pair)}: {exc}", file=sys.stderr)
+            continue
         if not drafted:
             continue
 
@@ -133,5 +157,10 @@ def build_items(
             ],
             provenance={"bridge_qid": pair["qid"], "asker": asker_for(item_id(pair))},
         )
-        if verify(item, private_text, public_text, judge, judge_samples):
+        try:
+            verified = verify(item, private_text, public_text, judge, judge_samples)
+        except ModelUnavailable as exc:
+            print(f"  skipped {item.item_id}: {exc}", file=sys.stderr)
+            continue
+        if verified:
             yield item

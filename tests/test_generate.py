@@ -285,3 +285,63 @@ class TestSourceAttributionAfterTheRealRun:
         assert gates.no_source_attribution(
             _item(question="Which ministry approved the transfer in March 2006?")
         )
+
+
+class TestRobustnessAgainstOneBadCall:
+    """A run of 25 questions must not end at question 3."""
+
+    def test_evidence_is_bounded_to_the_context_window(self):
+        """A cable can run to thousands of words.
+
+        A served model answers a prompt longer than its window with a bare 400, and that
+        killed a whole run.
+        """
+        clipped = phrase.clip("x" * 20000, limit=100)
+
+        assert len(clipped) < 200
+        assert clipped.endswith("[... truncated]")
+
+    def test_short_evidence_is_untouched(self):
+        """Truncation must not leave a marker on text that fits."""
+        assert phrase.clip("a short cable") == "a short cable"
+
+    def test_a_failing_phraser_costs_one_question_not_the_run(self):
+        """The model refusing one pair is not a reason to abandon the other twenty-four."""
+        from osint_benchmark.models.backend import ModelUnavailable
+
+        pairs = [
+            {"private_id": "c1", "public_id": "i1", "qid": "Q1"},
+            {"private_id": "c2", "public_id": "i2", "qid": "Q2"},
+        ]
+        texts = {"c1": "private", "i1": "public", "c2": "private", "i2": "public"}
+        drafted = '{"question": "Which body?", "answer": "the council"}'
+        calls = []
+
+        def phraser(prompt):
+            calls.append(prompt)
+            if len(calls) == 1:
+                raise ModelUnavailable("400 Bad Request: too long")
+            return drafted
+
+        built = list(phrase.build_items(pairs, texts, {}, phraser, lambda p: "SUPPORTED", 1))
+
+        assert len(built) == 1
+        assert built[0].item_id.startswith("c2")
+
+    def test_a_failing_judge_costs_one_question_not_the_run(self):
+        """Same for the verification half."""
+        from osint_benchmark.models.backend import ModelUnavailable
+
+        pairs = [{"private_id": "c1", "public_id": "i1", "qid": "Q1"}]
+        texts = {"c1": "private", "i1": "public"}
+
+        def judge(prompt):
+            raise ModelUnavailable("500")
+
+        built = list(
+            phrase.build_items(
+                pairs, texts, {}, lambda p: '{"question": "Q?", "answer": "A"}', judge, 1
+            )
+        )
+
+        assert built == []

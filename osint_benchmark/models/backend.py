@@ -83,6 +83,15 @@ def vllm(settings: Settings, timeout: float = 600.0) -> Complete:
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
                 body = json.loads(response.read())
+        except urllib.error.HTTPError as exc:
+            # The reason is in the body, not the status line. Discarding it turns "your
+            # prompt is longer than the context window" into a bare 400.
+            detail = ""
+            try:
+                detail = exc.read().decode("utf-8", "replace")[:500]
+            except Exception:  # noqa: BLE001 - a body we cannot read is not a new failure
+                pass
+            raise ModelUnavailable(f"{url}: {exc} {detail}") from exc
         except (urllib.error.URLError, OSError) as exc:
             raise ModelUnavailable(f"{url}: {exc}") from exc
         choices = body.get("choices") or []
