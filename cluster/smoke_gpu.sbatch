@@ -27,7 +27,7 @@
 #   OSINT_SMOKE_MODEL   what to serve. Default matches config/smoke/models.toml.
 set -euo pipefail
 
-MODEL="${OSINT_SMOKE_MODEL:-Qwen/Qwen2.5-0.5B-Instruct}"
+MODEL="${OSINT_SMOKE_MODEL:-swiss-ai/Apertus-8B-Instruct-2509}"
 PORT="${OSINT_SERVE_PORT:-8000}"
 WORK="/scratch/$USER/osint-smoke-gpu-$SLURM_JOB_ID"
 

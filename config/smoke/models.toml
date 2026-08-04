@@ -4,12 +4,17 @@
 # the client reach vLLM, do the prompts come back as parseable JSON, does the verdict
 # extraction find its word, does repeat-and-agree behave -- without waiting on a 32B.
 #
-# It does NOT answer whether the questions are any good. A 0.5B model will write poor
-# questions; that is expected and is not what this profile is for. The datasheet records
-# which model produced a run, so a smoke release cannot be mistaken for a real one.
+# It does NOT answer whether the questions are any good. The datasheet records which model
+# produced a run, so a smoke release cannot be mistaken for a real one.
+#
+# Qwen2.5-0.5B was tried first and could not do the job: it failed the necessity control --
+# refusing a question whose evidence plainly stated the answer -- and never produced three
+# identical judge verdicts, so repeat-and-agree discarded every draft. That was the check
+# working, not failing, and the fix is a model that can answer consistently rather than a
+# weaker check.
 
 [phraser]
-model = "Qwen/Qwen2.5-0.5B-Instruct"
+model = "swiss-ai/Apertus-8B-Instruct-2509"
 endpoint = ""
 temperature = 0.7
 # Not a reasoning model, so it needs no room for a <think> block. The real phraser does.
@@ -20,14 +25,14 @@ samples = 1
 # Deliberately the same model as the phraser here, which real runs must not do -- scoring
 # your own output is self-enhancement bias. Acceptable only because this profile tests
 # wiring rather than judgement.
-model = "Qwen/Qwen2.5-0.5B-Instruct"
+model = "swiss-ai/Apertus-8B-Instruct-2509"
 endpoint = ""
 temperature = 0.7
 max_tokens = 512
 samples = 3
 
 [solver]
-model = "Qwen/Qwen2.5-0.5B-Instruct"
+model = "swiss-ai/Apertus-8B-Instruct-2509"
 endpoint = ""
 temperature = 0.7
 max_tokens = 512
