@@ -16,16 +16,22 @@ model = "Qwen/QwQ-32B"
 endpoint = ""
 temperature = 0.7
 # QwQ is a reasoning model: replies open with a <think> block that must be stripped before
-# the answer is read, and a low ceiling truncates every reply mid-reasoning -- which scores
-# as a failure to answer and silently marks every question necessary.
-max_tokens = 4096
+# the answer is read. 4096 was not a ceiling, it was a wall -- on job 13349 it truncated 79
+# of 80 replies inside the reasoning trace, before any JSON was emitted, and the pipeline
+# recorded one question out of eighty with no indication why. QwQ is designed to think for
+# thousands of tokens; the budget has to allow for it and then leave room for the answer.
+max_tokens = 16384
 samples = 1
 
 [judge]
 model = "Qwen/QwQ-32B"
 endpoint = ""
 temperature = 0.7
-max_tokens = 4096
+# Less than the phraser: the judge decides one thing and answers in one word, so its
+# reasoning is shorter. Still far above 4096, because a truncated verdict is not a
+# rejection -- it is a reply with no verdict in it, which fails the agreement check and
+# discards a question that may have been fine.
+max_tokens = 8192
 # Three samples, unanimous only. Unanimity is meaningless at temperature 0, so the repeats
 # have to differ for the agreement to mean anything.
 samples = 3
@@ -34,5 +40,8 @@ samples = 3
 model = "Qwen/QwQ-32B"
 endpoint = ""
 temperature = 0.7
-max_tokens = 4096
+# A truncated solver reply reads as a failure to answer, and a solver that cannot answer
+# makes every question look necessary. This is the number that silently inflated the
+# previous project's necessity rate.
+max_tokens = 16384
 samples = 1

@@ -21,6 +21,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
+from collections import Counter
 from collections.abc import Iterator
 
 from osint_benchmark.generate.item import Evidence, Item
@@ -122,16 +123,26 @@ def build_items(
     judge: Complete,
     judge_samples: int = 3,
     question_type: str = "bridge",
+    outcomes: Counter | None = None,
 ) -> Iterator[Item]:
     """Yield one item per pair whose draft the judge can verify.
 
     Pairs whose evidence is missing are skipped rather than drafted from half a pair: a
     question written from one document cannot need two.
+
+    ``outcomes`` is counted into, and the caller should report it. Every way of losing a
+    pair here used to be a bare ``continue``, so a run that turned 80 pairs into one
+    question said only "1 accepted, 0 rejected" and gave no hint which of four quite
+    different things had happened — the answer took a model transcript that is off by
+    default. A count is not a diagnosis, but it names the stage.
     """
+    if outcomes is None:
+        outcomes = Counter()
     for pair in pairs:
         private_text = texts.get(pair["private_id"], "")
         public_text = texts.get(pair["public_id"], "")
         if not private_text or not public_text:
+            outcomes["no_evidence"] += 1
             continue
 
         bridge = labels.get(pair["qid"], pair["qid"])
@@ -140,9 +151,15 @@ def build_items(
         try:
             drafted = draft(pair, private_text, public_text, bridge, phraser)
         except ModelUnavailable as exc:
+            outcomes["phraser_error"] += 1
             print(f"  skipped {item_id(pair)}: {exc}", file=sys.stderr)
             continue
         if not drafted:
+            # The commonest loss by far, and the least obvious: a reasoning model given
+            # too small a token budget spends all of it inside its <think> block and is
+            # truncated before it ever emits the JSON. The reply is not empty, so nothing
+            # upstream looks wrong. 79 of 80 pairs went this way on job 13349.
+            outcomes["unparseable_draft"] += 1
             continue
 
         item = Item(
@@ -160,7 +177,14 @@ def build_items(
         try:
             verified = verify(item, private_text, public_text, judge, judge_samples)
         except ModelUnavailable as exc:
+            outcomes["judge_error"] += 1
             print(f"  skipped {item.item_id}: {exc}", file=sys.stderr)
             continue
         if verified:
+            outcomes["verified"] += 1
             yield item
+        else:
+            # Counted, because a rejected draft reaches neither accepted.jsonl nor
+            # rejected.jsonl: those hold what passed and failed the *gates*, and this
+            # never gets that far. Silently, it looked like the pair had never existed.
+            outcomes["judge_rejected"] += 1

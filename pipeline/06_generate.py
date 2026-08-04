@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections import Counter
 
 from osint_benchmark import paths
 from osint_benchmark.artifacts import Provenance, read_jsonl
@@ -68,6 +69,7 @@ def main(argv: list[str] | None = None) -> int:
     if transcript.transcript_path():
         print(f"transcribing model calls to {transcript.transcript_path()}")
 
+    outcomes: Counter = Counter()
     items = list(
         phrase.build_items(
             pairs,
@@ -76,8 +78,12 @@ def main(argv: list[str] | None = None) -> int:
             phraser,
             judge,
             judge_samples=1 if args.stub else judge_settings.samples,
+            outcomes=outcomes,
         )
     )
+    lost = len(pairs) - outcomes["verified"]
+    if lost:
+        print(f"{lost} of {len(pairs)} pairs produced no question: {dict(outcomes)}")
 
     out = paths.data_dir() / "items"
     accepted, rejected = emit.emit(

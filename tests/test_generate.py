@@ -234,6 +234,58 @@ class TestBuildItems:
 
         assert built == []
 
+    def test_every_way_of_losing_a_pair_is_counted(self):
+        """A run that turned 80 pairs into one question could not say which stage ate them.
+
+        Each loss was a bare `continue`, and a judge rejection reaches neither
+        accepted.jsonl nor rejected.jsonl -- those hold what passed and failed the gates,
+        which a rejected draft never reaches. Answering it took a model transcript that is
+        off by default.
+        """
+        from collections import Counter
+
+        texts = {"c1": "private", "i1": "public", "c2": "private", "i2": "public"}
+        pairs = [
+            {"private_id": "c1", "public_id": "MISSING", "qid": "Q1"},
+            {"private_id": "c2", "public_id": "i2", "qid": "Q2"},
+        ]
+        outcomes: Counter = Counter()
+
+        # A reply with no JSON in it: what a reasoning model returns when it is truncated
+        # inside its own <think> block, which is neither an error nor an empty reply.
+        list(
+            phrase.build_items(
+                pairs,
+                texts,
+                {},
+                lambda p: "Let me think about this",
+                lambda p: "",
+                1,
+                outcomes=outcomes,
+            )
+        )
+
+        assert outcomes["no_evidence"] == 1
+        assert outcomes["unparseable_draft"] == 1
+
+    def test_a_judge_rejection_is_counted_rather_than_vanishing(self):
+        """It is the one loss that leaves no trace in any output file."""
+        from collections import Counter
+
+        pairs = [{"private_id": "c1", "public_id": "i1", "qid": "Q1"}]
+        texts = {"c1": "private text", "i1": "public text"}
+        drafted = '{"question": "Which body?", "answer": "the council"}'
+        outcomes: Counter = Counter()
+
+        list(
+            phrase.build_items(
+                pairs, texts, {}, lambda p: drafted, lambda p: "UNSUPPORTED", 1, outcomes=outcomes
+            )
+        )
+
+        assert outcomes["judge_rejected"] == 1
+        assert outcomes["verified"] == 0
+
     def test_a_verified_answer_becomes_an_item(self):
         """The ordinary path."""
         pairs = [{"private_id": "c1", "public_id": "i1", "qid": "Q1"}]

@@ -161,10 +161,15 @@ print("weights at", snapshot_download("$MODEL", max_workers=8), flush=True)
 PY
 du -sh "$HF_HOME/hub" 2>/dev/null || true
 
+# --max-model-len 24576, not the 8192 of job 13349: a reasoning model needs room to reason
+# before it answers, and 8192 minus the evidence left QwQ truncated mid-thought on 79 of 80
+# questions. 62 GB of weights against 73 GB of usable memory leaves roughly 11 GB of KV
+# cache, which is about 42k tokens -- enough for one 24k sequence, and this client sends
+# one at a time.
 echo "=== starting vLLM: $MODEL on 2 GPUs ==="
 "$VLLM_PY" -m vllm.entrypoints.openai.api_server \
   --model "$MODEL" --host 127.0.0.1 --port "$PORT" \
-  --tensor-parallel-size 2 --max-model-len 8192 --gpu-memory-utilization 0.92 \
+  --tensor-parallel-size 2 --max-model-len 24576 --gpu-memory-utilization 0.92 \
   --disable-custom-all-reduce \
   > "$WORK/vllm.log" 2>&1 &
 SERVER_PID=$!
