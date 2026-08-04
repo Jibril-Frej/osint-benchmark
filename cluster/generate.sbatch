@@ -15,9 +15,17 @@
 # time still leaves everything it had finished.
 #
 # Two things are kept between jobs because they never change and re-fetching them costs
-# real GPU time: the raw corpus downloads in $HOME/osint-raw (~4.5 GB, an hour), and the
-# model weights in the shared Hugging Face cache (~66 GB, twenty minutes). Everything else
-# -- the repo, the parsed corpora, the vLLM install -- lives on the node and is discarded.
+# real GPU time: the raw corpus downloads (~4.5 GB, an hour) and the model weights (~66 GB,
+# twenty minutes). Both live in a stable directory on the node's own /scratch, NOT in
+# $HOME.
+#
+# $HOME is Kerberos-authenticated NFS and a batch job's credential expires underneath a
+# long write: job 13343 spent 75 minutes downloading the cables to $HOME and died on
+# `OSError: [Errno 127] Key has expired` with the file at exactly its pinned size. Short
+# writes at the end of a job do work, which is why the results are still copied there.
+#
+# The cache survives as long as jobs land on the same node; on a different one they
+# download again. That is the price of not touching NFS during a run.
 #
 # GPUs are requested at submit time. This needs two: QwQ-32B is ~66 GB in bf16.
 #
@@ -38,14 +46,9 @@ export OUT="$HOME/osint-generate-$SLURM_JOB_ID"
 export UV_INSTALL_DIR="$WORK/bin" UV_CACHE_DIR="$WORK/uv-cache"
 export UV_PYTHON_INSTALL_DIR="$WORK/uv-python" OSINT_DATA="$WORK/data"
 export PATH="$UV_INSTALL_DIR:$PATH" PYTHONUNBUFFERED=1
-# Kept between jobs. Everything else is not.
-export OSINT_RAW="$HOME/osint-raw"
-# Model weights go to the shared cache, not to the node. QwQ-32B is ~66 GB of bf16
-# safetensors and node-local scratch is discarded with the job, so every rerun paid for it
-# again -- about 20 minutes. `df -h` reports the shared filesystem as 100% full, which is
-# 99.13% rounded up: 419 GB of 46.9 TB are free, and the weights fit with room to spare.
-# It is shared space, though, so it is not somewhere to write per-run output.
-export HF_HOME="${HF_HOME:-$HOME/.cache/huggingface}"
+# Node-local and kept between jobs. Not deleted by the cleanup trap.
+export CACHE="/scratch/$USER/osint-cache"
+export OSINT_RAW="$CACHE/raw" HF_HOME="$CACHE/hf"
 export TORCH_HOME="$WORK/torch" NLTK_DATA="$WORK/nltk"
 export TRANSFORMERS_VERBOSITY=error
 export NLTK_DISABLE_IMPORT_SECURITY=1
@@ -55,7 +58,8 @@ echo "model   $MODEL"
 echo "limit   $LIMIT pairs"
 echo "scratch $(df -h /scratch | tail -1 | awk '{print $4}') free"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
-mkdir -p "$UV_INSTALL_DIR" "$NLTK_DATA" "$OUT" "$OSINT_RAW"
+mkdir -p "$UV_INSTALL_DIR" "$NLTK_DATA" "$OUT" "$OSINT_RAW" "$HF_HOME"
+echo "cache   $CACHE ($(du -sh "$CACHE" 2>/dev/null | cut -f1) already here)"
 
 SERVER_PID=""
 keep() {
@@ -95,7 +99,7 @@ export OSINT_TRANSCRIPT="$WORK/model-calls.jsonl"
 echo "=== does the linker build? ==="
 uv run python pipeline/02_link.py --check --device cuda
 
-echo "=== 1/8 sources (raw reused from $OSINT_RAW) ==="
+echo "=== 1/8 sources (raw cached in $OSINT_RAW) ==="
 uv run python pipeline/01_sources.py cablegate sanctions wikipedia_index
 
 echo "=== 2/8 link ==="

@@ -38,7 +38,13 @@ export UV_PYTHON_INSTALL_DIR="$WORK/uv-python" OSINT_DATA="$WORK/data"
 export PATH="$UV_INSTALL_DIR:$PATH" PYTHONUNBUFFERED=1
 # ReFinED downloads ~2 GB of weights and the entity description store on first use, and
 # truecase carries an NLTK tokenizer. Both go to the node, not to $HOME.
-export HF_HOME="$WORK/hf" TORCH_HOME="$WORK/torch" NLTK_DATA="$WORK/nltk"
+# Node-local and kept between jobs, so the 4.5 GB of corpora and the ReFinED weights are
+# downloaded once per node rather than once per job. Not in $HOME: that is Kerberos NFS,
+# and a batch job's credential expires underneath a long write (job 13343 died 75 minutes
+# into one). Not deleted by the cleanup trap.
+export CACHE="/scratch/$USER/osint-cache"
+export OSINT_RAW="$CACHE/raw" HF_HOME="$CACHE/hf"
+export TORCH_HOME="$WORK/torch" NLTK_DATA="$WORK/nltk"
 export TRANSFORMERS_VERBOSITY=error
 # NLTK refuses to import anything resolving inside the working directory or below it, and
 # uv puts the virtualenv at .venv inside the project -- so from the repo root NLTK blocks
@@ -51,7 +57,7 @@ echo "stride  $STRIDE"
 echo "index   $INDEX"
 echo "scratch $(df -h /scratch | tail -1 | awk '{print $4}') free"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
-mkdir -p "$UV_INSTALL_DIR" "$NLTK_DATA" "$OUT"
+mkdir -p "$UV_INSTALL_DIR" "$NLTK_DATA" "$OUT" "$OSINT_RAW" "$HF_HOME"
 
 cleanup() {
   rm -rf "$WORK"
