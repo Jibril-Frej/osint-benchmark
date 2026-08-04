@@ -69,4 +69,8 @@ uv run python pipeline/08_review.py
 step "9/9 release"
 uv run python pipeline/09_release.py --version smoke --no-fingerprints
 
-printf '\nSmoke run complete. Questions are placeholders: steps 6 and 7 ran with a stand-in.\n'
+if [ -n "$STUB_FLAG" ]; then
+  printf '\nSmoke run complete. Questions are placeholders: steps 6 and 7 used a stand-in.\n'
+else
+  printf '\nSmoke run complete. Steps 6 and 7 ran against a real model.\n'
+fi

@@ -111,6 +111,9 @@ echo "ready after ${SECONDS}s"
 
 export OSINT_MODEL_ENDPOINT="http://127.0.0.1:$PORT"
 export OSINT_CONFIG="$WORK/repo/config/smoke"
+# Record every prompt and reply. A run can produce nothing and give no reason; without
+# this, working out why costs another job.
+export OSINT_TRANSCRIPT="$WORK/model-calls.jsonl"
 
 echo "=== control: can the solver answer when the evidence plainly contains the answer? ==="
 # Run this before trusting any necessity number. A solver that cannot answer THIS is
@@ -121,6 +124,23 @@ echo "=== the pipeline, steps 6 and 7 against the real model ==="
 SMOKE_STUB=0 bash pipeline/smoke.sh
 
 echo "=== what came out ==="
-head -3 "$OSINT_DATA/items/accepted.jsonl" 2>/dev/null || echo "(no accepted items)"
+echo "accepted: $(wc -l < "$OSINT_DATA/items/accepted.jsonl" 2>/dev/null || echo 0)"
+echo "rejected: $(wc -l < "$OSINT_DATA/items/rejected.jsonl" 2>/dev/null || echo 0)"
+head -2 "$OSINT_DATA/items/accepted.jsonl" 2>/dev/null || true
+
+echo "=== what the model actually said ==="
+uv run python - <<'PY' || true
+import json, os, collections
+path = os.environ.get("OSINT_TRANSCRIPT")
+rows = [json.loads(x) for x in open(path, encoding="utf-8")] if path and os.path.exists(path) else []
+print(f"{len(rows)} calls:", dict(collections.Counter(r["role"] for r in rows)))
+print("empty replies:", sum(1 for r in rows if r["reply_chars"] == 0))
+for role in ("solver", "phraser", "judge"):
+    sample = next((r for r in rows if r["role"] == role), None)
+    if sample:
+        print(f"--- {role} reply ({sample['reply_chars']} chars) ---")
+        print(sample["reply"][:600])
+PY
+cp -f "$OSINT_TRANSCRIPT" "$HOME/osint-model-calls-${SLURM_JOB_ID}.jsonl" 2>/dev/null || true
 cp -f "$WORK/repo/releases/smoke/datasheet.json" "$HOME/osint-smoke-gpu-datasheet.json" 2>/dev/null || true
 echo done
