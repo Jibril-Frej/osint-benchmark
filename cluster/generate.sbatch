@@ -64,6 +64,12 @@ export NLTK_DISABLE_IMPORT_SECURITY=1
 # has no IPv4 address: job 13344 sat in a barrier for its full 30-minute timeout and died
 # with "Application timeout caused pair closure", 40 minutes after the weights had loaded.
 export GLOO_SOCKET_IFNAME=lo NCCL_SOCKET_IFNAME=lo VLLM_HOST_IP=127.0.0.1
+# These A100s are PCIe cards with no NVLink between them. Peer-to-peer over PCIe hangs on
+# hosts where the switch has ACS enabled, and job 13348 did exactly that: it got past the
+# gloo barrier, initialised NCCL on both ranks, and then printed nothing for ninety
+# minutes without fetching a single byte of weights. Shared memory instead -- there is
+# 252 GB of it on this node and the model is 66 GB.
+export NCCL_P2P_DISABLE=1
 
 echo "node    $(hostname)"
 echo "model   $MODEL"
@@ -86,7 +92,11 @@ cleanup() {
   keep
   if [ -n "$SERVER_PID" ] && kill -0 "$SERVER_PID" 2>/dev/null; then
     kill "$SERVER_PID" 2>/dev/null || true
-    wait "$SERVER_PID" 2>/dev/null || true
+    # Then insist. A server wedged inside an NCCL collective ignores SIGTERM, and a bare
+    # `wait` on it never returns: job 13348 held two A100s for a further 35 minutes after
+    # it had already given up and printed why.
+    for _ in $(seq 30); do kill -0 "$SERVER_PID" 2>/dev/null || break; sleep 1; done
+    kill -9 "$SERVER_PID" 2>/dev/null || true
   fi
   cp -f "$WORK/vllm.log" "$OUT/vllm.log" 2>/dev/null || true
   cp -f "$WORK/model-calls.jsonl" "$OUT/model-calls.jsonl" 2>/dev/null || true
@@ -139,8 +149,19 @@ export PATH="$WORK/vllm-venv/bin:$PATH"
 command -v ninja >/dev/null || { echo "ninja not on PATH" >&2; exit 1; }
 "$VLLM_PY" -c "import vllm; print('vllm', vllm.__version__)"
 
-echo "=== starting vLLM: $MODEL on 2 GPUs (~66 GB of weights, cached after the first run) ==="
+echo "=== fetching the weights before starting anything ==="
+# Separately, so the two things that take a long time can be told apart. Job 13348 sat for
+# ninety minutes inside a readiness loop that covers both, and only an inspection of the
+# cache directory showed it had never downloaded a byte -- it was hung in NCCL. Fetching
+# first makes the download visible and resumable, and lets the readiness deadline below be
+# short enough that a hang costs minutes.
+"$VLLM_PY" - <<PY
+from huggingface_hub import snapshot_download
+print("weights at", snapshot_download("$MODEL", max_workers=8), flush=True)
+PY
 du -sh "$HF_HOME/hub" 2>/dev/null || true
+
+echo "=== starting vLLM: $MODEL on 2 GPUs ==="
 "$VLLM_PY" -m vllm.entrypoints.openai.api_server \
   --model "$MODEL" --host 127.0.0.1 --port "$PORT" \
   --tensor-parallel-size 2 --max-model-len 8192 --gpu-memory-utilization 0.92 \
@@ -148,10 +169,12 @@ du -sh "$HF_HOME/hub" 2>/dev/null || true
   > "$WORK/vllm.log" 2>&1 &
 SERVER_PID=$!
 
-# Readiness is "it answers", not "the process exists". The weights download, then load,
-# then CUDA graphs capture, long after the process appears.
+# Readiness is "it answers", not "the process exists": the weights load and CUDA graphs
+# capture long after the process appears. The weights are already on disk by now, so this
+# only has to cover loading and compilation -- twenty minutes is generous for that, and a
+# hang is then cheap to discover rather than costing an hour and a half.
 echo "=== waiting for it to answer ==="
-deadline=$(( SECONDS + 5400 ))
+deadline=$(( SECONDS + 1200 ))
 until curl -sf "http://127.0.0.1:$PORT/v1/models" >/dev/null 2>&1; do
   if ! kill -0 "$SERVER_PID" 2>/dev/null; then
     echo "vLLM exited before becoming ready:" >&2
@@ -160,7 +183,7 @@ until curl -sf "http://127.0.0.1:$PORT/v1/models" >/dev/null 2>&1; do
     exit 1
   fi
   if [ "$SECONDS" -ge "$deadline" ]; then
-    echo "vLLM not ready in 5400s:" >&2; tail -60 "$WORK/vllm.log" >&2; exit 1
+    echo "vLLM not ready in 1200s of loading:" >&2; tail -60 "$WORK/vllm.log" >&2; exit 1
   fi
   sleep 20
 done
