@@ -62,6 +62,11 @@ VLLM_PY="$WORK/vllm-venv/bin/python"
 # engine dies with FileNotFoundError: 'ninja' after the weights have already loaded.
 uv pip install --python "$VLLM_PY" -q vllm ninja
 "$VLLM_PY" -c "import vllm; print('vllm', vllm.__version__)"
+# The venv's bin must be on PATH, not just importable: vLLM invokes ninja as a
+# subprocess, so installing the package is not enough if nothing can find the binary.
+# Calling "$VLLM_PY" directly rather than activating the venv is what hid this.
+export PATH="$WORK/vllm-venv/bin:$PATH"
+command -v ninja || { echo "ninja still not on PATH" >&2; exit 1; }
 
 SERVER_PID=""
 cleanup() {
