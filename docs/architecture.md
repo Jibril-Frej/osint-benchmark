@@ -330,6 +330,18 @@ field were also the two most answerable from the public side alone, at 10 of 34 
 trajectory and 6 of 10 for officer. What it costs is the free correctness check, which
 the verification pass and repeat-and-agree above are there to replace.
 
+**vLLM serves the models**, not the llama.cpp server the previous project used. Each
+question costs about seven calls -- one draft, three judge samples for repeat-and-agree,
+three solver calls for the ablation -- so a few hundred questions is several thousand
+generations with two documents in each prompt. Continuous batching is what that workload
+needs. llama.cpp's advantage is CPU inference, which buys nothing here: steps 6 and 7 are
+build steps only the authors run, and the scripted stand-in already covers exercising the
+chain without a GPU. Both speak the OpenAI chat API, so the choice is about serving
+infrastructure rather than about client code.
+
+Note that the client is still **sequential**: batching does nothing until requests are
+issued concurrently, so the throughput this was chosen for is not yet realised.
+
 ## Open decisions
 
 1. **Does the property backfill leave the workstation?** Name reconciliation sends

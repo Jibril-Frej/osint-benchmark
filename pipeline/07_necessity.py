@@ -22,7 +22,7 @@ from osint_benchmark import paths
 from osint_benchmark.artifacts import Provenance, write_records
 from osint_benchmark.generate.evidence import evidence_texts
 from osint_benchmark.models import settings, stub
-from osint_benchmark.models.backend import ModelUnavailable, llama_server
+from osint_benchmark.models.backend import ModelUnavailable, vllm
 from osint_benchmark.necessity import ablate
 from osint_benchmark.release.load import load_items
 
@@ -45,7 +45,7 @@ def main(argv: list[str] | None = None) -> int:
         print(model_note, file=sys.stderr)
     else:
         try:
-            solver = llama_server(solver_settings)
+            solver = vllm(solver_settings)
         except ModelUnavailable as exc:
             print(exc, file=sys.stderr)
             return 1

@@ -4,9 +4,17 @@ One protocol — :data:`Complete`, text in and text out — so every stage that 
 takes one as an argument and a test passes a stub. Nothing above this module knows whether
 there is a GPU anywhere.
 
-The backend is a llama.cpp ``llama-server`` speaking the OpenAI completions shape, which is
-what the previous project served QwQ-32B and Llama-3.3-70B through on the cluster. Swapping
-it for anything else means writing one function of the same shape.
+**vLLM is the serving stack**, chosen over the llama.cpp server the previous project used.
+The workload decides it: each question costs about seven calls -- one draft, three judge
+samples for repeat-and-agree, three solver calls for the ablation -- so a few hundred
+questions is several thousand generations, each with two documents in the prompt and a
+reasoning model emitting thousands of tokens. That is what continuous batching is for.
+llama.cpp's advantage is CPU inference, which buys nothing here: steps 6 and 7 are build
+steps only the benchmark's authors run, and ``models.stub`` already covers exercising the
+chain without a GPU.
+
+The wire format is the OpenAI chat API, which llama-server also speaks, so the decision is
+about serving infrastructure rather than about this file.
 """
 
 from __future__ import annotations
@@ -45,8 +53,8 @@ def strip_reasoning(reply: str) -> str:
     return THINK.sub("", reply).strip()
 
 
-def llama_server(settings: Settings, timeout: float = 600.0) -> Complete:
-    """Return a :data:`Complete` backed by a running llama-server.
+def vllm(settings: Settings, timeout: float = 600.0) -> Complete:
+    """Return a :data:`Complete` backed by a vLLM server.
 
     Raises:
         ModelUnavailable: If the role has no endpoint configured. Failing here beats
@@ -54,31 +62,33 @@ def llama_server(settings: Settings, timeout: float = 600.0) -> Complete:
     """
     if not settings.endpoint:
         raise ModelUnavailable(
-            f"[{settings.role}] has no endpoint: serve {settings.model} and set it in "
-            "config/models.toml, or export OSINT_MODEL_ENDPOINT"
+            f"[{settings.role}] has no endpoint: serve {settings.model} with vLLM and set "
+            "it in config/models.toml, or export OSINT_MODEL_ENDPOINT"
         )
+    url = f"{settings.endpoint.rstrip('/')}/v1/chat/completions"
 
     def complete(prompt: str) -> str:
         """Send one prompt and return the reply, reasoning stripped."""
         payload = json.dumps(
             {
-                "prompt": prompt,
+                "model": settings.model,
+                "messages": [{"role": "user", "content": prompt}],
                 "temperature": settings.temperature,
-                "n_predict": settings.max_tokens,
-                "stream": False,
+                "max_tokens": settings.max_tokens,
             }
         ).encode()
         request = urllib.request.Request(
-            f"{settings.endpoint.rstrip('/')}/completion",
-            data=payload,
-            headers={"Content-Type": "application/json"},
+            url, data=payload, headers={"Content-Type": "application/json"}
         )
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
                 body = json.loads(response.read())
         except (urllib.error.URLError, OSError) as exc:
-            raise ModelUnavailable(f"{settings.endpoint}: {exc}") from exc
-        return strip_reasoning(body.get("content", ""))
+            raise ModelUnavailable(f"{url}: {exc}") from exc
+        choices = body.get("choices") or []
+        if not choices:
+            return ""
+        return strip_reasoning(choices[0].get("message", {}).get("content") or "")
 
     return complete
 

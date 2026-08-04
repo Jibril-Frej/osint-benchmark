@@ -22,7 +22,7 @@ from osint_benchmark.artifacts import Provenance, read_jsonl
 from osint_benchmark.generate import emit, phrase
 from osint_benchmark.generate.evidence import entity_labels, evidence_texts
 from osint_benchmark.models import settings, stub
-from osint_benchmark.models.backend import ModelUnavailable, llama_server
+from osint_benchmark.models.backend import ModelUnavailable, vllm
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -48,8 +48,8 @@ def main(argv: list[str] | None = None) -> int:
         print(model_note, file=sys.stderr)
     else:
         try:
-            phraser = llama_server(phraser_settings)
-            judge = llama_server(judge_settings)
+            phraser = vllm(phraser_settings)
+            judge = vllm(judge_settings)
         except ModelUnavailable as exc:
             print(exc, file=sys.stderr)
             return 1

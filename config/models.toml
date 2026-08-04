@@ -3,12 +3,16 @@
 # The prompts these settings govern are in `prompts/`, one file each. Read both together:
 # a prompt is only correct in combination with the parameters it runs under.
 #
-# `endpoint` is empty by default because the models are served, not embedded -- set it to
-# a running llama-server, or point OSINT_MODEL_ENDPOINT at one.
+# Served by vLLM, which speaks the OpenAI chat API. `model` is the name vLLM was started
+# with -- a Hugging Face repo id, or whatever `--served-model-name` set.
+#
+# `endpoint` is empty by default because the models are served, not embedded: set it to a
+# running server, or point OSINT_MODEL_ENDPOINT at one. Steps 6 and 7 refuse to start
+# without it rather than failing per-question after an hour.
 
 [phraser]
 # Writes the question and its answer from the two documents.
-model = "QwQ-32B"
+model = "Qwen/QwQ-32B"
 endpoint = ""
 temperature = 0.7
 # QwQ is a reasoning model: replies open with a <think> block, and the trace must be
@@ -21,7 +25,7 @@ samples = 1
 [judge]
 # Verdicts and quality decisions. A different model family from the phraser on purpose:
 # scoring your own output is self-enhancement bias, not evaluation.
-model = "Llama-3.3-70B-Instruct"
+model = "meta-llama/Llama-3.3-70B-Instruct"
 endpoint = ""
 temperature = 0.7
 max_tokens = 1024
@@ -32,7 +36,7 @@ samples = 3
 [solver]
 # Re-solves a finished question under each necessity ablation. QwQ rather than the 70B
 # judge: it is a third of the size, and fits on hardware the 70B does not.
-model = "QwQ-32B"
+model = "Qwen/QwQ-32B"
 endpoint = ""
 temperature = 0.7
 max_tokens = 4096
