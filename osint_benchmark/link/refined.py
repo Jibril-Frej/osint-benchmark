@@ -218,6 +218,27 @@ def link_documents(
             }
 
 
+def install_hint(exc: ImportError) -> str:
+    """Return what to do about a failed ReFinED import.
+
+    Two failures look identical from the outside and have nothing to do with each other.
+    The dependency may be absent — expected, it is optional because it pulls torch. Or it
+    may be installed and refuse to load, because ReFinED imports NLTK first and recent NLTK
+    installs a hook that blocks any module reachable from the working directory. That one
+    reports a missing ``regex``, names neither ReFinED nor the fix, and cost a cluster job.
+    """
+    if "current working directory" in str(exc):
+        return (
+            f"ReFinED is installed but will not import: {exc}\n"
+            "This is NLTK's import hook, not a missing dependency. Re-run with "
+            "PYTHONSAFEPATH=1 set, or from a directory that is not the repository root."
+        )
+    return (
+        "ReFinED is not installed. It is an optional dependency because it pulls "
+        f"torch and transformers: uv sync --extra link ({exc})"
+    )
+
+
 def load(
     model_name: str = "wikipedia_model_with_numbers",
     device: str = "cpu",
@@ -239,10 +260,7 @@ def load(
     try:
         from refined.inference.processor import Refined  # noqa: PLC0415
     except ImportError as exc:  # pragma: no cover - depends on the environment
-        raise ImportError(
-            "ReFinED is not installed. It is an optional dependency because it pulls "
-            "torch and transformers: uv sync --extra link"
-        ) from exc
+        raise ImportError(install_hint(exc)) from exc
 
     model = Refined.from_pretrained(model_name=model_name, entity_set=entity_set, device=device)
 

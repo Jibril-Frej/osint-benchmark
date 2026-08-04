@@ -89,6 +89,28 @@ class TestLinkDocuments:
         assert [e["qid"] for e in row["entities"]] == ["Q1", "Q3"]
 
 
+class TestInstallHint:
+    """Two unrelated failures look identical from the outside."""
+
+    def test_a_missing_dependency_gets_the_install_line(self):
+        """The expected case: it is optional because it pulls torch."""
+        from osint_benchmark.link.refined import install_hint
+
+        assert "uv sync --extra link" in install_hint(ImportError("No module named 'refined'"))
+
+    def test_nltks_import_hook_is_not_reported_as_a_missing_dependency(self):
+        """It is installed and refuses to load, and the traceback names neither cause.
+
+        Reporting this as absent sends the reader to reinstall something already there.
+        """
+        from osint_benchmark.link.refined import install_hint
+
+        hint = install_hint(ImportError("Blocked import of regex from current working directory"))
+
+        assert "PYTHONSAFEPATH=1" in hint
+        assert "not installed" not in hint
+
+
 class TestNarrativeBody:
     """What the linker is shown decides what it can find; a cable is not all narrative."""
 
