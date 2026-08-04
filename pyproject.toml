@@ -6,6 +6,22 @@ requires-python = ">=3.13"
 
 dependencies = []
 
+# Entity linking is optional because it pulls torch and transformers -- gigabytes, against
+# the seven small packages the rest of the project needs. Only step 2 with a real linker
+# uses them, so `uv sync` stays fast for everyone else, including the smoke path.
+#
+# ReFinED is not on PyPI under that name: `refined` there is an unrelated type-hints
+# package. It installs from source. The previous project pinned transformers 4.46 and
+# needed two patches to the ReFinED source on top, and ran it in a dedicated environment
+# rather than the project venv -- so treat this group as a starting point, not a
+# guarantee, and expect to need a separate environment on a machine with CUDA.
+[project.optional-dependencies]
+link = [
+    "refined @ git+https://github.com/amazon-science/ReFinED.git",
+    "transformers==4.46.*",
+    "torch",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=8.3",
@@ -20,6 +36,11 @@ package = true
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+# ReFinED is not on PyPI, so the link extra references its git repository directly.
+# Hatchling refuses a direct reference unless told to allow one.
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["osint_benchmark"]
