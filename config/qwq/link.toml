@@ -1,0 +1,31 @@
+# Every tunable governing entity linking (step 2). Changing recall is an edit here.
+#
+# These are the settings that decide what the benchmark can be built on at all: an entity
+# the linker does not find is an entity no question can bridge on.
+
+[refined]
+# The ReFinED checkpoint. `_with_numbers` is the one that recognises dates and quantities,
+# which are then dropped -- worth it, because the same checkpoint is better at everything
+# else too.
+model = "wikipedia_model_with_numbers"
+# `wikipedia`, not `wikidata`: the ~6.3M entities holding an English article are exactly
+# the benchmark's public pool. Resolving into the other 93M can only produce mentions no
+# public document can match.
+entity_set = "wikipedia"
+# Confidence floor on a resolution. 0.5 rather than something reassuring: this model is
+# confidently wrong about as often as it is confidently right, so the floor buys little,
+# and the filter that discriminates is the Wikidata type check in step 3.
+confidence = 0.5
+# Documents per forward pass. The difference between four hours and four days over 251k
+# cables. Raise it if the GPU has memory to spare; 64 fits a 40 GB A100 comfortably.
+batch_size = 64
+# Characters of each document shown to the linker. A cable's subject is in its first few
+# thousand; past that the marginal mention is a boilerplate footer.
+max_chars = 4000
+
+[dictionary]
+# The no-model fallback (`--dictionary`). Both floors exist because Wikipedia has articles
+# called "Told" and "Has Been", and matching them case-insensitively against ALL-CAPS cable
+# text turned 200 cables into 51,499 mentions of nothing.
+min_title_words = 2
+min_title_chars = 6

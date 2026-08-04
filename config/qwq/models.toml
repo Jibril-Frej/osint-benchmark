@@ -1,0 +1,38 @@
+# One served model in all three roles: Qwen/QwQ-32B.
+#
+# This profile exists because two A100s hold one 32B model, not two, and the point of the
+# run it was made for is to read the questions rather than to score them.
+#
+# The judge is therefore the same model as the phraser, which is self-enhancement bias and
+# is not how a release may be built. Treat every judge verdict from this profile as a
+# wiring check, not as evidence: what it establishes is that the chain produces questions,
+# and the questions themselves are then read by a person.
+#
+# config/models.toml holds the real pairing -- a phraser and a judge from different
+# families -- and is what a release run uses.
+
+[phraser]
+model = "Qwen/QwQ-32B"
+endpoint = ""
+temperature = 0.7
+# QwQ is a reasoning model: replies open with a <think> block that must be stripped before
+# the answer is read, and a low ceiling truncates every reply mid-reasoning -- which scores
+# as a failure to answer and silently marks every question necessary.
+max_tokens = 4096
+samples = 1
+
+[judge]
+model = "Qwen/QwQ-32B"
+endpoint = ""
+temperature = 0.7
+max_tokens = 4096
+# Three samples, unanimous only. Unanimity is meaningless at temperature 0, so the repeats
+# have to differ for the agreement to mean anything.
+samples = 3
+
+[solver]
+model = "Qwen/QwQ-32B"
+endpoint = ""
+temperature = 0.7
+max_tokens = 4096
+samples = 1
