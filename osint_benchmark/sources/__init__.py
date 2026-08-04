@@ -29,6 +29,7 @@ _SOURCES: dict[str, Source] = {
         sanctions.SOURCE,
         ucdp.SOURCE,
         wikipedia_index.SOURCE,
+        wikipedia_index.SIMPLE,
     )
 }
 

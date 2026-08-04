@@ -459,3 +459,23 @@ url = "https://dumps.wikimedia.org/enwiki/20260601/enwiki-20260601-page_props.sq
 sha256 = "4d0ad9bac166948281e3fdcfda42c20338067272a4b07ae5127b41e5d6dd61ca"
 size = 454495593
 note = "page_props table: page_id -> Wikidata QID via the wikibase_item property."
+
+# The same tables over Simple English: 44 MB against 2.85 GB. Same parser, same code path.
+# It exists so the whole pipeline can be exercised without a 2.85 GB download; the real
+# entity universe is wikipedia_index above.
+[wikipedia_index_simple]
+kind = "public"
+
+[[wikipedia_index_simple.origins]]
+filename = "simplewiki-20260701-page.sql.gz"
+url = "https://dumps.wikimedia.org/simplewiki/20260701/simplewiki-20260701-page.sql.gz"
+sha256 = "b433dd306460052a1751f977cea66b9ef43e28d141234d2280ba59a49ed61c60"
+size = 33076929
+note = "page table: page_id -> title and namespace."
+
+[[wikipedia_index_simple.origins]]
+filename = "simplewiki-20260701-page_props.sql.gz"
+url = "https://dumps.wikimedia.org/simplewiki/20260701/simplewiki-20260701-page_props.sql.gz"
+sha256 = "bcc8a26ce117d1eec913247a353e024a9b8c9a47229dbfa3951ac1bd786d7e14"
+size = 10623595
+note = "page_props table: page_id -> Wikidata QID via the wikibase_item property."

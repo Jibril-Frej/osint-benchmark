@@ -20,6 +20,7 @@ set -euo pipefail
 WORK="${1:-${OSINT_DATA:-./data}}"
 export OSINT_DATA="$WORK"
 LIMIT="${SMOKE_LIMIT:-2000}"
+INDEX="${SMOKE_INDEX:-wikipedia_index_simple}"
 
 step() { printf '\n=== %s ===\n' "$1"; }
 
@@ -28,28 +29,26 @@ step "1/9 sources"
 # sanctions and parliament are the small public sources.
 uv run python pipeline/01_sources.py cablegate ucdp
 
-step "1b/9 the public entity index (needs the Wikipedia SQL dumps, 2.8 GB)"
-if [ -f "$WORK/docs/wikipedia_index.jsonl" ]; then
-  echo "already built, skipping"
-else
-  uv run python pipeline/01_sources.py wikipedia_index
-fi
+step "1b/9 the public entity index"
+# simplewiki, not enwiki: 44 MB against 2.85 GB, same tables and the same parser. The real
+# entity universe is enwiki -- build wikipedia_index for that, it just takes an hour.
+uv run python pipeline/01_sources.py wikipedia_index_simple
 
 step "2/9 link"
 # Both sides: an entity has to be named privately and publicly to bridge.
 # Private prose by title match (no model); the public side is tabular, so its names are
 # reconciled against the live Wikidata endpoint instead.
 # Public side first: its names are reconciled against the live Wikidata endpoint.
-uv run python pipeline/02_link.py ucdp --limit "$LIMIT" --stride 401
+uv run python pipeline/02_link.py ucdp --index "$INDEX" --limit "$LIMIT" --stride 401
 # Then the private prose, looking only for the entities the public side named. Matching
 # all 7.5M article titles against ALL-CAPS cable text finds a title for almost any phrase.
-uv run python pipeline/02_link.py cablegate --dictionary --restrict-to ucdp --limit "$LIMIT" --stride 53
+uv run python pipeline/02_link.py cablegate --index "$INDEX" --dictionary --restrict-to ucdp --limit "$LIMIT" --stride 53
 
 step "3/9 graph"
 uv run python pipeline/03_graph.py
 
 step "4/9 public evidence for the bridge entities"
-uv run python pipeline/04_public.py --limit 25
+uv run python pipeline/04_public.py --index "$INDEX" --limit 25
 
 step "5/9 pair"
 uv run python pipeline/05_pair.py

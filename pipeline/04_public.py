@@ -32,11 +32,11 @@ def bridge_entities(limit: int | None = None) -> list[str]:
     return qids[:limit] if limit else qids
 
 
-def titles_for(qids: list[str]) -> list[tuple[str, str]]:
+def titles_for(qids: list[str], index_name: str = "wikipedia_index") -> list[tuple[str, str]]:
     """Return (QID, article title) for the entities that have an article."""
-    index = paths.docs_dir() / "wikipedia_index.jsonl"
+    index = paths.docs_dir() / f"{index_name}.jsonl"
     if not index.exists():
-        raise SystemExit(f"{index} is missing: run pipeline/01_sources.py wikipedia_index first")
+        raise SystemExit(f"{index} is missing: run pipeline/01_sources.py {index_name} first")
     wanted = set(qids)
     return [(row["qid"], row["title"]) for row in read_jsonl(index) if row["qid"] in wanted]
 
@@ -45,6 +45,7 @@ def main(argv: list[str] | None = None) -> int:
     """Fetch Wikidata statements and article text for the bridge entities."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--limit", type=int, help="fetch only the first N bridge entities")
+    parser.add_argument("--index", default="wikipedia_index", help="which entity index to read")
     args = parser.parse_args(argv)
 
     qids = bridge_entities(args.limit)
@@ -77,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(f"wikidata: {written} of {len(qids)} entities -> {facts}")
 
-    pairs = titles_for(qids)
+    pairs = titles_for(qids, args.index)
     text = paths.data_dir() / "facts" / "articles.jsonl"
     written = write_records(
         text,

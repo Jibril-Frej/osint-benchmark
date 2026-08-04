@@ -23,33 +23,10 @@ from pathlib import Path
 
 from osint_benchmark.sources.base import Projection, Source
 
-WIKI = "enwiki"
-DATE = "20260601"
-
 # (page_id,'wikibase_item','Qnnn') -- the only page_props shape we want.
 WIKIBASE_ROW = re.compile(r"\((\d+),'wikibase_item','(Q\d+)'")
 # (page_id,0,'title' -- namespace 0 only. The title may contain escaped quotes.
 NS0_ROW = re.compile(r"\((\d+),0,'((?:[^'\\]|\\.)*)'")
-
-PROJECTION = Projection(
-    source=f"MediaWiki {WIKI}-{DATE} page and page_props SQL dumps",
-    source_fields=("page_id", "page_namespace", "page_title", "pp_page", "pp_propname", "pp_value"),
-    kept={
-        "pp_value": "doc_id and qid (the wikibase_item value)",
-        "pp_page": "page_id",
-        "page_id": "page_id",
-        "page_title": "title",
-    },
-    dropped={
-        "page_namespace": "used as a filter, not carried: only namespace 0 is kept",
-        "pp_propname": "used as a filter, not carried: only wikibase_item rows are kept",
-    },
-    kind="index",
-    note=(
-        "One record per entity that has an article in this wiki. Titles have underscores "
-        "restored to spaces and escaped quotes unescaped, as MediaWiki stores them."
-    ),
-)
 
 
 def page_qids(path: Path) -> dict[int, str]:
@@ -74,7 +51,7 @@ def article_titles(path: Path) -> Iterator[tuple[int, str]]:
                 yield int(page_id), title.replace("\\'", "'").replace("_", " ")
 
 
-def parse(raw_dir: Path) -> Iterator[dict]:
+def _parse(raw_dir: Path, name: str, wiki: str, date: str) -> Iterator[dict]:
     """Yield one record per entity holding an article in this wiki.
 
     Only the ``page_id -> QID`` map is held; the page table is streamed and each row
@@ -85,12 +62,56 @@ def parse(raw_dir: Path) -> Iterator[dict]:
     Output order therefore follows the page dump rather than QID order. Still
     deterministic, since it is the same file every time.
     """
-    directory = raw_dir / "wikipedia_index"
-    qids = page_qids(directory / f"{WIKI}-{DATE}-page_props.sql.gz")
-    for page_id, title in article_titles(directory / f"{WIKI}-{DATE}-page.sql.gz"):
+    directory = raw_dir / name
+    qids = page_qids(directory / f"{wiki}-{date}-page_props.sql.gz")
+    for page_id, title in article_titles(directory / f"{wiki}-{date}-page.sql.gz"):
         qid = qids.get(page_id)
         if qid is not None:
             yield {"doc_id": qid, "qid": qid, "page_id": page_id, "title": title}
 
 
-SOURCE = Source(name="wikipedia_index", kind="public", parse=parse, projection=PROJECTION)
+def make_source(name: str, wiki: str, date: str) -> Source:
+    """Return a source over one MediaWiki's page and page_props dumps.
+
+    Two wikis, one parser: they expose the same tables, so only the filename prefix
+    differs. simplewiki exists so the pipeline can be exercised end to end on 44 MB
+    instead of 2.85 GB -- the same code path, a sixty-fifth of the download.
+    """
+    projection = Projection(
+        source=f"MediaWiki {wiki}-{date} page and page_props SQL dumps",
+        source_fields=(
+            "page_id",
+            "page_namespace",
+            "page_title",
+            "pp_page",
+            "pp_propname",
+            "pp_value",
+        ),
+        kept={
+            "pp_value": "doc_id and qid (the wikibase_item value)",
+            "pp_page": "page_id",
+            "page_id": "page_id",
+            "page_title": "title",
+        },
+        dropped={
+            "page_namespace": "used as a filter, not carried: only namespace 0 is kept",
+            "pp_propname": "used as a filter, not carried: only wikibase_item rows are kept",
+        },
+        kind="index",
+        note=(
+            f"One record per entity with an article in {wiki}. Titles have underscores "
+            "restored to spaces and escaped quotes unescaped, as MediaWiki stores them."
+        ),
+    )
+    return Source(
+        name=name,
+        kind="public",
+        parse=lambda raw_dir: _parse(raw_dir, name, wiki, date),
+        projection=projection,
+    )
+
+
+# The public entity universe the benchmark is scoped to.
+SOURCE = make_source("wikipedia_index", "enwiki", "20260601")
+# The same thing over Simple English: 44 MB against 2.85 GB, for exercising the chain.
+SIMPLE = make_source("wikipedia_index_simple", "simplewiki", "20260701")

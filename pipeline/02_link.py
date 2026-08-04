@@ -60,9 +60,17 @@ def main(argv: list[str] | None = None) -> int:
             "and closer to what a bridge is"
         ),
     )
+    parser.add_argument(
+        "--index",
+        default="wikipedia_index",
+        help="which entity index to scope to; wikipedia_index_simple is the small one",
+    )
     args = parser.parse_args(argv)
 
-    index = list(read_jsonl(paths.docs_dir() / "wikipedia_index.jsonl"))
+    index_path = paths.docs_dir() / f"{args.index}.jsonl"
+    if not index_path.exists():
+        raise SystemExit(f"{index_path} is missing: run pipeline/01_sources.py {args.index} first")
+    index = list(read_jsonl(index_path))
     universe = frozenset(row["qid"] for row in index)
     print(f"public entity set: {len(universe)} entities with an English article")
 
