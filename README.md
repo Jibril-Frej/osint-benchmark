@@ -64,9 +64,14 @@ takes a day.
 
 ```bash
 uv sync --extra link
+uv run python pipeline/02_link.py --check --device cuda   # run this first
 uv run python pipeline/02_link.py cablegate --device cuda
 uv run python pipeline/02_link.py cablegate --dictionary --restrict-to sanctions  # no model
 ```
+
+`--check` builds the linker and links one sentence. It needs no corpora, so a broken
+install costs three minutes rather than the half hour of downloads that precedes the real
+run. Importing ReFinED is not the same as loading a model, and only the second one fails.
 
 Settings are in [`config/link.toml`](config/link.toml). On Slurm, one job links the slice
 both ways and prints the two side by side:
