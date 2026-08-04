@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=osint-smoke-gpu
-#SBATCH --gpus=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH --time=04:00:00
@@ -19,8 +18,11 @@
 # weights are read from the existing Hugging Face cache, which is on the shared
 # filesystem and therefore visible from any node.
 #
+# The GPU is requested at submit time, not here: sites differ on whether a bare count is
+# accepted or a type is required (this one rejects --gpus=1 and wants --gpus=a100).
+#
 # Usage:
-#   sbatch --partition=<p> --qos=<q> cluster/smoke_gpu.sbatch
+#   sbatch --partition=<p> --qos=<q> --gpus=<type> cluster/smoke_gpu.sbatch
 #
 #   OSINT_SMOKE_MODEL   what to serve. Default matches config/smoke/models.toml.
 set -euo pipefail

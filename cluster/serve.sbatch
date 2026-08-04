@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=osint-serve
-#SBATCH --gpus=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH --time=08:00:00
@@ -22,9 +21,10 @@
 #   OSINT_SERVE_ARGS    extra vLLM arguments, e.g. "--tensor-parallel-size 2 --quantization awq"
 #   OSINT_SERVE_PORT    default 8000
 #
-# Slurm directives above are deliberately generic. Partition, QoS and GPU type differ per
-# site: pass them at submit time, e.g.
-#   sbatch --partition=<p> --qos=<q> --gpus=a100:1 cluster/serve.sbatch ...
+# Slurm directives above are deliberately generic. Partition, QoS and the GPU request
+# differ per site -- some reject a bare count and require a type -- so pass them at submit
+# time:
+#   sbatch --partition=<p> --qos=<q> --gpus=<type> cluster/serve.sbatch ...
 set -euo pipefail
 
 MODEL="${OSINT_SERVE_MODEL:?set OSINT_SERVE_MODEL to the model to serve}"
