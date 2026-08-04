@@ -67,8 +67,12 @@ cleanup() {
     kill "$SERVER_PID" 2>/dev/null || true
     wait "$SERVER_PID" 2>/dev/null || true
   fi
+  # Save the server log BEFORE deleting the working directory. The first version of this
+  # wiped it, so a startup failure left nothing to diagnose but the tail of a traceback
+  # whose own message said "see root cause above".
+  cp -f "$WORK/vllm.log" "$HOME/osint-vllm-${SLURM_JOB_ID}.log" 2>/dev/null || true
   rm -rf "$WORK"
-  echo "cleaned up $WORK"
+  echo "cleaned up $WORK (server log kept at ~/osint-vllm-${SLURM_JOB_ID}.log)"
 }
 trap cleanup EXIT
 
@@ -85,10 +89,13 @@ echo "=== waiting for it to answer ==="
 deadline=$(( SECONDS + 1200 ))
 until curl -sf "http://127.0.0.1:$PORT/v1/models" >/dev/null 2>&1; do
   if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-    echo "vLLM exited before becoming ready:" >&2; tail -40 "$WORK/vllm.log" >&2; exit 1
+    echo "vLLM exited before becoming ready. First error and context:" >&2
+    grep -nE "Error|error:|Traceback|Cannot|unsupported|not supported|requires" "$WORK/vllm.log" | head -20 >&2
+    echo "--- last 60 lines ---" >&2; tail -60 "$WORK/vllm.log" >&2
+    exit 1
   fi
   if [ "$SECONDS" -ge "$deadline" ]; then
-    echo "vLLM not ready in time:" >&2; tail -40 "$WORK/vllm.log" >&2; exit 1
+    echo "vLLM not ready in ${READY_TIMEOUT}s:" >&2; tail -60 "$WORK/vllm.log" >&2; exit 1
   fi
   sleep 5
 done
