@@ -107,7 +107,7 @@ class TestInstallHint:
 
         hint = install_hint(ImportError("Blocked import of regex from current working directory"))
 
-        assert "PYTHONSAFEPATH=1" in hint
+        assert "NLTK_DISABLE_IMPORT_SECURITY=1" in hint
         assert "not installed" not in hint
 
 

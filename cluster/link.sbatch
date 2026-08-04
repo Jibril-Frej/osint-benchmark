@@ -40,13 +40,11 @@ export PATH="$UV_INSTALL_DIR:$PATH" PYTHONUNBUFFERED=1
 # truecase carries an NLTK tokenizer. Both go to the node, not to $HOME.
 export HF_HOME="$WORK/hf" TORCH_HOME="$WORK/torch" NLTK_DATA="$WORK/nltk"
 export TRANSFORMERS_VERBOSITY=error
-# Recent NLTK installs an import hook that refuses to load any module reachable from the
-# working directory, and ReFinED imports NLTK before anything else. Run from the repo root
-# -- which is every invocation below -- that hook fires on `regex` and the whole linker
-# fails to import, with a traceback that names NLTK and never mentions ReFinED. Taking the
-# working directory off sys.path is what the hook itself asks for, and costs nothing here:
-# the package is installed editable, so nothing depends on being found by proximity.
-export PYTHONSAFEPATH=1
+# NLTK refuses to import anything resolving inside the working directory or below it, and
+# uv puts the virtualenv at .venv inside the project -- so from the repo root NLTK blocks
+# its own dependencies and takes ReFinED down with it. Set here as well as in the library,
+# because the checks below import truecase and ReFinED directly. See allow_nltk_imports().
+export NLTK_DISABLE_IMPORT_SECURITY=1
 
 echo "node    $(hostname)"
 echo "stride  $STRIDE"

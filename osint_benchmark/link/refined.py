@@ -35,6 +35,7 @@ it can be read against the actual class hierarchy.
 
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
@@ -119,6 +120,27 @@ def narrative_body(body: str) -> str:
     return "\n".join(lines)
 
 
+def allow_nltk_imports() -> None:
+    """Stop NLTK's import hook blocking its own dependencies.
+
+    NLTK installs a meta-path finder that refuses any import resolving *inside the working
+    directory or below it*. uv puts the virtualenv at ``.venv`` inside the project, so from
+    the repository root every module NLTK needs is "in the working directory" and NLTK
+    cannot import at all — taking ReFinED and truecase down with it, with a traceback that
+    names neither.
+
+    ``PYTHONSAFEPATH`` does not help despite what the error says: the finder inspects
+    resolved paths directly and never consults ``sys.path``. Nor does running from
+    elsewhere — from ``/`` it blocks the standard library. The documented off-switch is the
+    only remedy, and what it guards against, a hostile module dropped in the working
+    directory, is not a threat model that applies to a checked-out repository whose
+    virtualenv we created.
+
+    ``setdefault``, so an operator who has decided otherwise keeps their decision.
+    """
+    os.environ.setdefault("NLTK_DISABLE_IMPORT_SECURITY", "1")
+
+
 def truecase(text: str) -> str:
     """Restore sentence casing to text that has lost it.
 
@@ -128,6 +150,7 @@ def truecase(text: str) -> str:
     Returns the text unchanged if ``truecase`` is not installed, so a run without it
     degrades rather than fails — but a full run should have it.
     """
+    allow_nltk_imports()
     try:
         import truecase as truecase_lib  # noqa: PLC0415
     except ImportError:  # pragma: no cover - depends on the environment
@@ -223,15 +246,16 @@ def install_hint(exc: ImportError) -> str:
 
     Two failures look identical from the outside and have nothing to do with each other.
     The dependency may be absent — expected, it is optional because it pulls torch. Or it
-    may be installed and refuse to load, because ReFinED imports NLTK first and recent NLTK
-    installs a hook that blocks any module reachable from the working directory. That one
-    reports a missing ``regex``, names neither ReFinED nor the fix, and cost a cluster job.
+    may be installed and refuse to load, because ReFinED imports NLTK first and NLTK blocks
+    its own dependencies (see :func:`allow_nltk_imports`). That one reports a missing
+    ``regex``, names neither ReFinED nor the fix, and cost two cluster jobs.
     """
     if "current working directory" in str(exc):
         return (
             f"ReFinED is installed but will not import: {exc}\n"
-            "This is NLTK's import hook, not a missing dependency. Re-run with "
-            "PYTHONSAFEPATH=1 set, or from a directory that is not the repository root."
+            "This is NLTK's import hook, not a missing dependency. Set "
+            "NLTK_DISABLE_IMPORT_SECURITY=1. Note that PYTHONSAFEPATH, which the message "
+            "above recommends, has no effect on it."
         )
     return (
         "ReFinED is not installed. It is an optional dependency because it pulls "
@@ -257,6 +281,7 @@ def load(
         ImportError: With the install line, since this is the dependency that historically
             cost the most time to get working.
     """
+    allow_nltk_imports()
     try:
         from refined.inference.processor import Refined  # noqa: PLC0415
     except ImportError as exc:  # pragma: no cover - depends on the environment
