@@ -22,7 +22,7 @@ from functools import partial
 
 from osint_benchmark import paths
 from osint_benchmark.artifacts import Provenance, read_jsonl, write_records
-from osint_benchmark.link import dictionary, refined, tabular
+from osint_benchmark.link import dictionary, merge, refined, tabular
 from osint_benchmark.link import settings as link_settings
 from osint_benchmark.sources import base, get_source
 
@@ -86,6 +86,16 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--and-dictionary",
+        action="store_true",
+        help=(
+            "run the title matcher as well as ReFinED and merge what both found. The two "
+            "miss different entities -- on one measured run the matcher found 22 bridges "
+            "ReFinED did not and ReFinED found 15 it did not -- so the union is worth "
+            "more than half again as many questions. Use with --restrict-to"
+        ),
+    )
+    parser.add_argument(
         "--index",
         default="wikipedia_index",
         help="which entity index to scope to; wikipedia_index_simple is the small one",
@@ -115,29 +125,33 @@ def main(argv: list[str] | None = None) -> int:
     settings = link_settings.refined()
     min_title_words, min_title_chars = link_settings.dictionary()
 
+    def title_linker() -> tuple[refined.Linker, str]:
+        """Return the no-model linker and a description of what it was scoped to."""
+        titles = index
+        method = "exact article-title match (no model)"
+        # Unrestricted, single-word titles are unusable: Wikipedia has articles called
+        # "Told" and "Right". Restricted to a handful of known entities the danger is
+        # gone and the requirement only hurts -- "Afghanistan" is one word.
+        min_words = min_title_words
+        if args.restrict_to:
+            other = paths.data_dir() / "links" / f"{args.restrict_to}.jsonl"
+            if not other.exists():
+                raise SystemExit(f"{other} is missing: link {args.restrict_to} first")
+            allowed = {e["qid"] for row in read_jsonl(other) for e in row["entities"]}
+            titles = [row for row in index if row["qid"] in allowed]
+            min_words = 1
+            method += f", restricted to the {len(allowed)} entities {args.restrict_to} names"
+        print(f"title match over {len(titles)} candidate entities")
+        return dictionary.linker(
+            dictionary.build_dictionary(titles, min_chars=min_title_chars, min_words=min_words)
+        ), method
+
     wanted = args.sources or list(SIDES)
     linker, method = None, ""
     prepare = None
     if any(name in PROSE for name in wanted):
         if args.dictionary:
-            titles = index
-            method = "exact article-title match (no model)"
-            # Unrestricted, single-word titles are unusable: Wikipedia has articles called
-            # "Told" and "Right". Restricted to a handful of known entities the danger is
-            # gone and the requirement only hurts -- "Afghanistan" is one word.
-            min_words = min_title_words
-            if args.restrict_to:
-                other = paths.data_dir() / "links" / f"{args.restrict_to}.jsonl"
-                if not other.exists():
-                    raise SystemExit(f"{other} is missing: link {args.restrict_to} first")
-                allowed = {e["qid"] for row in read_jsonl(other) for e in row["entities"]}
-                titles = [row for row in index if row["qid"] in allowed]
-                min_words = 1
-                method += f", restricted to the {len(allowed)} entities {args.restrict_to} names"
-            linker = dictionary.linker(
-                dictionary.build_dictionary(titles, min_chars=min_title_chars, min_words=min_words)
-            )
-            print(f"linking prose by title match over {len(titles)} candidate entities")
+            linker, method = title_linker()
         else:
             try:
                 linker = refined.load(
@@ -155,13 +169,21 @@ def main(argv: list[str] | None = None) -> int:
             prepare = partial(refined.prepare, max_chars=settings.max_chars)
             print(f"linking prose with {method}, batch {settings.batch_size}")
 
-    for name in wanted:
-        source = get_source(name)
-        records = read_jsonl(base.output_path(source))
+    also = None
+    if args.and_dictionary and not args.dictionary:
+        also, also_method = title_linker()
+
+    def selected(name: str):
+        """Return the records of one source, after --stride and --limit."""
+        records = read_jsonl(base.output_path(get_source(name)))
         if args.stride > 1:
             records = (row for i, row in enumerate(records) if i % args.stride == 0)
         if args.limit:
             records = (row for _, row in zip(range(args.limit), records, strict=False))
+        return records
+
+    for name in wanted:
+        records = selected(name)
 
         if name in PROSE:
             how = method
@@ -174,6 +196,17 @@ def main(argv: list[str] | None = None) -> int:
                 batch_size=settings.batch_size,
                 prepare_text=prepare,
             )
+            if also is not None:
+                # A second pass over the same documents, held whole: it only ever looks for
+                # the entities the public side named, so it is small by construction.
+                extra = {
+                    row["doc_id"]: row["entities"]
+                    for row in refined.link_documents(selected(name), also, PROSE[name], universe)
+                    if row["entities"]
+                }
+                print(f"{name}: title match adds entities to {len(extra)} documents")
+                rows_iter = merge.merge_rows(rows_iter, extra)
+                how = f"{method}, merged with {also_method}"
         else:
             how = "name reconciliation against the live Wikidata endpoint"
             rows_iter = tabular.link_records(records, name, TABULAR[name], universe)

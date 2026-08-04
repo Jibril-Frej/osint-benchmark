@@ -155,7 +155,36 @@ class TestNarrativeBody:
         """It is full of capitalised tokens and about nothing."""
         cable = "VZCZCXRO1234\nRR RUEHWEB\nSUBJECT: X\n\n1. (C) The minister said so.\nSMITH"
 
-        assert narrative_body(cable) == "1. (C) The minister said so."
+        assert narrative_body(cable) == "1.  The minister said so."
+
+    def test_classification_markers_are_dropped(self):
+        """(SBU) is a marking, not a word in the sentence -- and the linker resolves it.
+
+        SBU came back as an entity 1,248 times in a 21k-cable run.
+        """
+        assert "SBU" not in narrative_body("\n1. (SBU) The minister said so.\nSMITH")
+
+    def test_handling_markers_on_their_own_line_are_dropped(self):
+        """SIPDIS sits inside the narrative, so stripping the preamble does not catch it.
+
+        It was the second most frequent entity of a whole run, ahead of every country
+        but one.
+        """
+        body = "\n1. (C) One.\nSIPDIS\nNOFORN\n2. (C) Two.\nSMITH"
+        cleaned = narrative_body(body)
+
+        assert "SIPDIS" not in cleaned
+        assert "NOFORN" not in cleaned
+        assert "One." in cleaned and "Two." in cleaned
+
+    def test_a_word_that_merely_looks_like_a_marker_survives(self):
+        """The markers are matched as whole lines and as parenthesised codes, not anywhere.
+
+        A cable discussing a secret is not a cable marked SECRET.
+        """
+        body = "\n1. (C) They kept it secret from the Council.\nSMITH"
+
+        assert "secret from the Council" in narrative_body(body)
 
     def test_the_drafter_signature_is_dropped(self):
         """A cable's last line is a surname, and it is the corpus's favourite mislink."""
@@ -209,6 +238,60 @@ class TestBatching:
         )
 
         assert shown == ["raw"]
+
+
+class TestMerge:
+    """The two linkers miss different entities, so the union is bigger than either."""
+
+    def test_entities_from_both_linkers_survive(self):
+        """22 bridges came only from the matcher and 15 only from ReFinED; both count."""
+        from osint_benchmark.link.merge import merge_entities
+
+        model = [{"qid": "Q1", "surface_form": "Siemens", "confidence": 0.9}]
+        titles = [{"qid": "Q2", "surface_form": "Rafidain Bank", "confidence": 1.0}]
+
+        assert [e["qid"] for e in merge_entities(model, titles)] == ["Q1", "Q2"]
+
+    def test_the_stronger_reading_of_a_shared_entity_wins(self):
+        """Both found it; the surface form kept should be the confident one's."""
+        from osint_benchmark.link.merge import merge_entities
+
+        weak = [{"qid": "Q1", "surface_form": "UAC", "confidence": 0.4}]
+        strong = [{"qid": "Q1", "surface_form": "United Aircraft Corporation", "confidence": 0.9}]
+
+        merged = merge_entities(weak, strong)
+
+        assert len(merged) == 1
+        assert merged[0]["surface_form"] == "United Aircraft Corporation"
+
+    def test_the_result_is_ordered_so_two_runs_agree(self):
+        """Link output is compared between runs; dict order is not a guarantee."""
+        from osint_benchmark.link.merge import merge_entities
+
+        a = [{"qid": "Q9", "surface_form": "b", "confidence": 1.0}]
+        b = [{"qid": "Q3", "surface_form": "a", "confidence": 1.0}]
+
+        assert [e["qid"] for e in merge_entities(a, b)] == ["Q3", "Q9"]
+
+    def test_documents_the_other_linker_said_nothing_about_are_untouched(self):
+        """The matcher finds something in 0.8% of cables; the rest must pass through."""
+        from osint_benchmark.link.merge import merge_rows
+
+        rows = [{"doc_id": "1", "side": "private", "entities": []}]
+
+        assert list(merge_rows(rows, {})) == rows
+
+    def test_merging_does_not_mutate_the_row_it_was_given(self):
+        """The rows are streamed from one generator into another; aliasing would corrupt."""
+        from osint_benchmark.link.merge import merge_rows
+
+        original = {"doc_id": "1", "side": "private", "entities": []}
+        extra = {"1": [{"qid": "Q1", "surface_form": "x", "confidence": 1.0}]}
+
+        merged = next(iter(merge_rows([original], extra)))
+
+        assert len(merged["entities"]) == 1
+        assert original["entities"] == []
 
 
 class TestReconcile:

@@ -31,6 +31,18 @@ What is deliberately *not* filtered here is the kind of thing an entity is. ReFi
 coarse types are unreliable — it labels countries ORG — so the decision about what may
 anchor a bridge is taken from Wikidata in :mod:`osint_benchmark.graph.entity_types`, where
 it can be read against the actual class hierarchy.
+
+**This step is not bit-reproducible.** Two runs over identical input — same corpus, same
+checkpoint, same settings, same GPU — gave 296,570 and 296,636 mentions over 45,296 and
+45,300 entities. About 0.02%, consistent with floating-point non-determinism moving a
+handful of scores across the confidence floor, though that is inference and not something
+measured. The bridges and pairs were identical both times, so nothing downstream moved.
+
+It matters only for what may be pinned: a fingerprint over link output would not match
+between runs. Nothing does that. ``pipeline/09_release.py`` fingerprints the *parsed
+corpora*, which are a deterministic function of bytes whose checksums are in ``pins/``, and
+freezes the items themselves — so a rebuilder confirms they have the same corpora and the
+same questions, not that their linker landed on the same 45,300 entities.
 """
 
 from __future__ import annotations
@@ -57,6 +69,20 @@ DROP_TYPES = frozenset({"DATE", "TIME", "CARDINAL", "ORDINAL", "QUANTITY", "PERC
 
 # Where a cable's narrative begins: the first numbered paragraph.
 NARRATIVE_START = re.compile(r"\n\s*1\.\s*\(")
+
+# Per-paragraph classification markers: "1. (SBU) The ambassador said". They are not part
+# of the sentence, and the linker resolves them: SBU came back as an entity 1,248 times in
+# 21k cables, and it is a marking, not a thing anyone can ask about.
+CLASSIFICATION = re.compile(r"\((?:TS|S|C|U|SBU|LOU|SI|NF)(?://?[A-Z]+)*\)")
+
+# Distribution and handling markers that sit on their own line inside the narrative.
+# SIPDIS is the worst of them -- 1,946 mentions, more than any real entity except the
+# United States -- because it survives the preamble strip by appearing further down.
+MARKER_LINE = re.compile(
+    r"^\s*(?:SIPDIS|NOFORN|NODIS|EXDIS|STADIS|CONFIDENTIAL|SECRET|UNCLAS(?:SIFIED)?"
+    r"|LIMITED OFFICIAL USE|E\.O\.\s*\d+.*)\s*$",
+    re.MULTILINE,
+)
 
 
 @dataclass(frozen=True)
@@ -107,10 +133,15 @@ def narrative_body(body: str) -> str:
     name and goes too: it is the single most reliably mislinked span in the corpus.
 
     A cable with no numbered paragraph keeps its whole body, minus that signature.
+
+    Classification and distribution markings go too, wherever they appear. They read as
+    ordinary capitalised tokens and the linker duly resolves them: ``SIPDIS`` was the
+    second most frequent "entity" in a 21k-cable run, ahead of every country but one.
     """
     start = NARRATIVE_START.search(body)
     text = body[start.start() :] if start else body
-    lines = text.strip().splitlines()
+    text = MARKER_LINE.sub("", CLASSIFICATION.sub("", text))
+    lines = [line for line in text.strip().splitlines() if line.strip()]
     # Only when something is left afterwards. A one-line body is short enough to look like
     # a signature, and dropping it leaves the linker nothing at all to read.
     if len(lines) > 1:
