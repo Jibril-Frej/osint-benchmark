@@ -169,3 +169,25 @@ class TestGzippedOutput:
         assert output.read_bytes()[:2] == b"\x1f\x8b"  # gzip magic
         assert list(read_jsonl(output)) == [{"doc_id": "1", "a": "x"}]
         assert _written(output)["rows_out"] == 1
+
+
+class TestStaleSidecar:
+    """An interrupted re-run must not leave the previous sidecar vouching for new data."""
+
+    def test_the_old_sidecar_is_gone_before_the_new_data_is_written(self, tmp_path):
+        """A killed rebuild left 1,615,423 records beside a sidecar claiming 7,517,498.
+
+        The sidecar was from the previous, complete run, and nothing about it looked wrong.
+        """
+        output = tmp_path / "out.jsonl"
+        write_records(output, [{"doc_id": str(i)} for i in range(5)], SOUND)
+        assert _written(output)["rows_out"] == 5
+
+        def interrupted():
+            yield {"doc_id": "0"}
+            raise KeyboardInterrupt
+
+        with pytest.raises(KeyboardInterrupt):
+            write_records(output, interrupted(), SOUND)
+
+        assert not sidecar_path(output).exists()

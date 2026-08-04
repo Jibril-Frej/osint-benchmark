@@ -163,10 +163,15 @@ def write_records(
     ones emit their own shape, since forcing a sanctions listing into a Document would
     invent a document that does not exist.
 
-    The sidecar is written last, so a file without one is a run that died rather than a
-    projection nobody documented.
+    Any existing sidecar is removed *before* the data is written, and a new one written
+    after. Both halves matter. Writing it last means a file with no sidecar is a run that
+    died. Removing it first means an interrupted *re-run* cannot leave the previous
+    sidecar standing over truncated data — which happened here: a killed rebuild left
+    1,615,423 records beside a sidecar still claiming 7,517,498, and the claim looked
+    perfectly sound.
     """
     output.parent.mkdir(parents=True, exist_ok=True)
+    sidecar_path(output).unlink(missing_ok=True)
     count = 0
     with _open_text(output, "w") as handle:
         for record in records:

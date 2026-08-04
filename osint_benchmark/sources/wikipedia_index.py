@@ -75,13 +75,22 @@ def article_titles(path: Path) -> Iterator[tuple[int, str]]:
 
 
 def parse(raw_dir: Path) -> Iterator[dict]:
-    """Yield one record per entity holding an article in this wiki."""
+    """Yield one record per entity holding an article in this wiki.
+
+    Only the ``page_id -> QID`` map is held; the page table is streamed and each row
+    emitted as it is read. Holding both maps needs several GB for 7.5M entries, which is
+    fine on a workstation and is not fine on a shared login node -- the first cluster run
+    was killed here, leaving output with no provenance sidecar beside it.
+
+    Output order therefore follows the page dump rather than QID order. Still
+    deterministic, since it is the same file every time.
+    """
     directory = raw_dir / "wikipedia_index"
     qids = page_qids(directory / f"{WIKI}-{DATE}-page_props.sql.gz")
-    titles = dict(article_titles(directory / f"{WIKI}-{DATE}-page.sql.gz"))
-    for page_id, qid in sorted(qids.items()):
-        if page_id in titles:
-            yield {"doc_id": qid, "qid": qid, "page_id": page_id, "title": titles[page_id]}
+    for page_id, title in article_titles(directory / f"{WIKI}-{DATE}-page.sql.gz"):
+        qid = qids.get(page_id)
+        if qid is not None:
+            yield {"doc_id": qid, "qid": qid, "page_id": page_id, "title": title}
 
 
 SOURCE = Source(name="wikipedia_index", kind="public", parse=parse, projection=PROJECTION)
