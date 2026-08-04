@@ -46,6 +46,11 @@ HTTP_RANGE_NOT_SATISFIABLE = 416
 TRANSIENT_STATUS = frozenset({429, 500, 502, 503, 504})
 RETRIES = 5
 BACKOFF_SECONDS = 4
+# Seconds with no data arriving before the socket is treated as dead. It is a per-read
+# timeout, not a deadline for the transfer, so a slow-but-alive download is unaffected.
+# Without one a stalled connection hangs forever: a batch job sat in step 1 for 38 minutes
+# on a download that takes 7, with no way to tell a stall from slowness.
+READ_TIMEOUT = 120
 
 
 class SourceUnavailable(RuntimeError):
@@ -362,17 +367,25 @@ def _download(url: str, dest: Path, expected_size: int | None = None) -> None:
     partial.replace(dest)
 
 
-def _open_with_retry(request: urllib.request.Request, retries: int = RETRIES):
+def _open_with_retry(
+    request: urllib.request.Request,
+    retries: int | None = None,
+    timeout: float | None = None,
+):
     """Open a request, retrying the failures that are worth retrying.
 
     A transient status or a dropped connection is retried with linear back-off; anything
     else is raised immediately, because retrying a 404 just wastes time. The last failure
     is re-raised so the caller sees the real reason rather than a generic one.
     """
+    # Read the module constants here rather than as default arguments: a default is bound
+    # once at definition, so patching the constant would silently have no effect.
+    retries = RETRIES if retries is None else retries
+    timeout = READ_TIMEOUT if timeout is None else timeout
     last: Exception | None = None
     for attempt in range(retries):
         try:
-            return urllib.request.urlopen(request)  # noqa: S310
+            return urllib.request.urlopen(request, timeout=timeout)  # noqa: S310
         except urllib.error.HTTPError as exc:
             if exc.code not in TRANSIENT_STATUS:
                 raise

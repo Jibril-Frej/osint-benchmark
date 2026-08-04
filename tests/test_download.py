@@ -190,3 +190,29 @@ class TestRetry:
             _download(_url(server), tmp_path / "file", len(BODY))
 
         assert len([s for s, _ in server.served if s == 404]) == 1
+
+
+class TestStall:
+    """A dead connection must fail, not hang."""
+
+    def test_a_stalled_connection_times_out(self, tmp_path, monkeypatch):
+        """A batch job sat in step 1 for 38 minutes on a download that takes seven.
+
+        Every other fetcher in the project passes a timeout; the one that moves gigabytes
+        did not, so a stalled socket was bounded only by the job's walltime.
+        """
+        import socket as socket_module
+
+        monkeypatch.setattr("osint_benchmark.sources.base.BACKOFF_SECONDS", 0)
+        monkeypatch.setattr("osint_benchmark.sources.base.READ_TIMEOUT", 0.3)
+        monkeypatch.setattr("osint_benchmark.sources.base.RETRIES", 2)
+
+        listener = socket_module.socket()
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        port = listener.getsockname()[1]
+        try:
+            with pytest.raises((TimeoutError, urllib.error.URLError, OSError)):
+                _download(f"http://127.0.0.1:{port}/file", tmp_path / "file", 10)
+        finally:
+            listener.close()
