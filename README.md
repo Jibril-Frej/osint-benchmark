@@ -28,11 +28,13 @@ uv run pytest -q
 bash pipeline/smoke.sh
 ```
 
-Runs every step on a small slice and writes something at each. It uses two stand-ins, both
-labelled in what they produce: step 2 links by article-title match instead of ReFinED, and
-steps 6–7 use a scripted stand-in instead of a served model, so the questions are
-placeholders marked `STUB`. It proves the chain runs; it says nothing about question
-quality.
+Runs every step on a small slice and writes something at each, in about five minutes. It
+uses two stand-ins, both labelled in what they produce: step 2 links by article-title match
+instead of ReFinED, and steps 6–7 use a scripted stand-in instead of a served model, so the
+questions are placeholders marked `STUB`. It proves the chain runs; it says nothing about
+question quality.
+
+`SMOKE_STUB=0` runs steps 6 and 7 against a real model instead.
 
 ## The pipeline
 
@@ -41,12 +43,12 @@ Run in order. Each step reads the previous step's output from `data/`.
 | step | what it does | needs |
 | --- | --- | --- |
 | `01_sources.py` | fetch, parse and verify the corpora | network |
-| `02_link.py` | annotate documents with Wikidata entities | ReFinED (GPU) or `--dictionary` |
+| `02_link.py` | annotate documents with Wikidata entities | `uv sync --extra link`, or `--dictionary` |
 | `03_graph.py` | invert links into entity↔document bridges | — |
 | `04_public.py` | fetch public evidence for the bridge entities | network |
 | `05_pair.py` | pair one confidential document with one public record | — |
-| `06_generate.py` | write each question and its answer | a served model |
-| `07_necessity.py` | measure whether both sides are needed | a served model |
+| `06_generate.py` | write each question and its answer | a model served with vLLM |
+| `07_necessity.py` | measure whether both sides are needed | a model served with vLLM |
 | `08_review.py` | render the questions for the human pass | — |
 | `09_release.py` | freeze a version | — |
 
@@ -55,11 +57,26 @@ uv run python pipeline/01_sources.py            # all sources
 uv run python pipeline/01_sources.py cablegate  # just one
 ```
 
-Steps 6 and 7 need QwQ-32B and Llama-3.3-70B served. Point them at one:
+### Steps 6 and 7
+
+They need a model served with vLLM, named in [`config/models.toml`](config/models.toml).
+Point the pipeline at it and check the solver works before trusting any number:
 
 ```bash
-OSINT_MODEL_ENDPOINT=http://127.0.0.1:8080 uv run python pipeline/06_generate.py
-uv run python pipeline/07_necessity.py --control   # check the solver works first
+export OSINT_MODEL_ENDPOINT=http://127.0.0.1:8000
+uv run python pipeline/07_necessity.py --control   # a solver that fails this makes
+uv run python pipeline/06_generate.py --limit 20   # every question look necessary
+```
+
+`--stub` runs both against a scripted stand-in instead, for exercising the chain with no
+GPU. Set `OSINT_TRANSCRIPT=calls.jsonl` to record every prompt and reply — off by default,
+because prompts carry corpus text and replies carry gold answers.
+
+On Slurm, one job does the lot: clone, install, serve, run, tear down.
+
+```bash
+sbatch --partition=<p> --qos=<q> cluster/smoke.sbatch                 # CPU, stand-in models
+sbatch --partition=<p> --qos=<q> --gpus=<type> cluster/smoke_gpu.sbatch   # a real model
 ```
 
 ## Sources
@@ -72,6 +89,7 @@ uv run python pipeline/07_necessity.py --control   # check the solver works firs
 | `sanctions` | public | sesam.search.admin.ch |
 | `ucdp` | public | ucdp.uu.se |
 | `wikipedia_index` | public | dumps.wikimedia.org |
+| `wikipedia_index_simple` | public | dumps.wikimedia.org — 44 MB against 2.85 GB, for exercising the chain |
 
 Every URL, size and SHA-256 is in [`pins/sources.toml`](pins/sources.toml). Re-pinning a
 dump to a newer date is an edit to that file, not a code change.
