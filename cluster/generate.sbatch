@@ -14,10 +14,10 @@
 # Results are copied out after each stage rather than at the end, so a job that runs out of
 # time still leaves everything it had finished.
 #
-# The raw downloads are kept in $HOME/osint-raw and reused: they are ~4.5 GB, they do not
-# change, and re-fetching them cost an hour of GPU time on the last run. Everything else --
-# the repo, the parsed corpora, vLLM, the model weights -- lives on the node and is
-# discarded.
+# Two things are kept between jobs because they never change and re-fetching them costs
+# real GPU time: the raw corpus downloads in $HOME/osint-raw (~4.5 GB, an hour), and the
+# model weights in the shared Hugging Face cache (~66 GB, twenty minutes). Everything else
+# -- the repo, the parsed corpora, the vLLM install -- lives on the node and is discarded.
 #
 # GPUs are requested at submit time. This needs two: QwQ-32B is ~66 GB in bf16.
 #
@@ -40,8 +40,13 @@ export UV_PYTHON_INSTALL_DIR="$WORK/uv-python" OSINT_DATA="$WORK/data"
 export PATH="$UV_INSTALL_DIR:$PATH" PYTHONUNBUFFERED=1
 # Kept between jobs. Everything else is not.
 export OSINT_RAW="$HOME/osint-raw"
-# The weights are node-local: 66 GB does not belong on a filesystem that is 100% full.
-export HF_HOME="$WORK/hf" TORCH_HOME="$WORK/torch" NLTK_DATA="$WORK/nltk"
+# Model weights go to the shared cache, not to the node. QwQ-32B is ~66 GB of bf16
+# safetensors and node-local scratch is discarded with the job, so every rerun paid for it
+# again -- about 20 minutes. `df -h` reports the shared filesystem as 100% full, which is
+# 99.13% rounded up: 419 GB of 46.9 TB are free, and the weights fit with room to spare.
+# It is shared space, though, so it is not somewhere to write per-run output.
+export HF_HOME="${HF_HOME:-$HOME/.cache/huggingface}"
+export TORCH_HOME="$WORK/torch" NLTK_DATA="$WORK/nltk"
 export TRANSFORMERS_VERBOSITY=error
 export NLTK_DISABLE_IMPORT_SECURITY=1
 
@@ -118,7 +123,8 @@ export PATH="$WORK/vllm-venv/bin:$PATH"
 command -v ninja >/dev/null || { echo "ninja not on PATH" >&2; exit 1; }
 "$VLLM_PY" -c "import vllm; print('vllm', vllm.__version__)"
 
-echo "=== starting vLLM: $MODEL on 2 GPUs (~66 GB of weights to fetch first) ==="
+echo "=== starting vLLM: $MODEL on 2 GPUs (~66 GB of weights, cached after the first run) ==="
+du -sh "$HF_HOME/hub" 2>/dev/null || true
 "$VLLM_PY" -m vllm.entrypoints.openai.api_server \
   --model "$MODEL" --host 127.0.0.1 --port "$PORT" \
   --tensor-parallel-size 2 --max-model-len 8192 --gpu-memory-utilization 0.92 \
