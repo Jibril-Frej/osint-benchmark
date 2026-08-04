@@ -1,0 +1,16 @@
+# Linking parameters for the smoke profile.
+#
+# Identical to the real ones except for the batch size: the smoke run links a couple of
+# thousand documents, and a smaller batch reaches the first output sooner, which is what a
+# smoke run is for.
+
+[refined]
+model = "wikipedia_model_with_numbers"
+entity_set = "wikipedia"
+confidence = 0.5
+batch_size = 16
+max_chars = 4000
+
+[dictionary]
+min_title_words = 2
+min_title_chars = 6

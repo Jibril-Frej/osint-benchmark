@@ -12,6 +12,9 @@ Four roots, each overridable:
   read them in place rather than fetching 135 GB a second time.
 * ``OSINT_DOCS`` — parsed, normalised documents.
 * ``OSINT_PINS`` — the committed source checksums and per-document hashes.
+
+and one more for the tunables themselves: ``OSINT_CONFIG``, so a run can be pointed at a
+whole alternative parameter set (``config/smoke``) without editing a committed file.
 """
 
 from __future__ import annotations
@@ -40,3 +43,8 @@ def docs_dir() -> Path:
 def pins_dir() -> Path:
     """Return the root for the committed pins (source checksums, document hashes)."""
     return Path(os.environ.get("OSINT_PINS", ROOT / "pins"))
+
+
+def config_dir() -> Path:
+    """Return the directory holding the parameter files."""
+    return Path(os.environ.get("OSINT_CONFIG", ROOT / "config"))

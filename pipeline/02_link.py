@@ -18,10 +18,12 @@ from __future__ import annotations
 
 import argparse
 import sys
+from functools import partial
 
 from osint_benchmark import paths
 from osint_benchmark.artifacts import Provenance, read_jsonl, write_records
 from osint_benchmark.link import dictionary, refined, tabular
+from osint_benchmark.link import settings as link_settings
 from osint_benchmark.sources import base, get_source
 
 PROSE = {"cablegate": "private", "dodis": "private", "parliament": "public"}
@@ -74,8 +76,12 @@ def main(argv: list[str] | None = None) -> int:
     universe = frozenset(row["qid"] for row in index)
     print(f"public entity set: {len(universe)} entities with an English article")
 
+    settings = link_settings.refined()
+    min_title_words, min_title_chars = link_settings.dictionary()
+
     wanted = args.sources or list(SIDES)
     linker, method = None, ""
+    prepare = None
     if any(name in PROSE for name in wanted):
         if args.dictionary:
             titles = index
@@ -83,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
             # Unrestricted, single-word titles are unusable: Wikipedia has articles called
             # "Told" and "Right". Restricted to a handful of known entities the danger is
             # gone and the requirement only hurts -- "Afghanistan" is one word.
-            min_words = dictionary.MIN_TITLE_WORDS
+            min_words = min_title_words
             if args.restrict_to:
                 other = paths.data_dir() / "links" / f"{args.restrict_to}.jsonl"
                 if not other.exists():
@@ -92,15 +98,26 @@ def main(argv: list[str] | None = None) -> int:
                 titles = [row for row in index if row["qid"] in allowed]
                 min_words = 1
                 method += f", restricted to the {len(allowed)} entities {args.restrict_to} names"
-            linker = dictionary.linker(dictionary.build_dictionary(titles, min_words=min_words))
+            linker = dictionary.linker(
+                dictionary.build_dictionary(titles, min_chars=min_title_chars, min_words=min_words)
+            )
             print(f"linking prose by title match over {len(titles)} candidate entities")
         else:
             try:
-                linker = refined.load(device=args.device)
+                linker = refined.load(
+                    model_name=settings.model,
+                    device=args.device,
+                    entity_set=settings.entity_set,
+                )
             except ImportError as exc:
                 print(exc, file=sys.stderr)
                 return 1
-            method = "ReFinED"
+            method = f"ReFinED {settings.model} over the {settings.entity_set} entity set"
+            # Truecasing and narrative extraction, not decoration: the cables are ALL CAPS
+            # and open with routing lines. Linking them raw is what makes a model linker
+            # perform no better than the dictionary it was meant to replace.
+            prepare = partial(refined.prepare, max_chars=settings.max_chars)
+            print(f"linking prose with {method}, batch {settings.batch_size}")
 
     for name in wanted:
         source = get_source(name)
@@ -112,7 +129,15 @@ def main(argv: list[str] | None = None) -> int:
 
         if name in PROSE:
             how = method
-            rows_iter = refined.link_documents(records, linker, PROSE[name], universe)
+            rows_iter = refined.link_documents(
+                records,
+                linker,
+                PROSE[name],
+                universe,
+                confidence=settings.confidence,
+                batch_size=settings.batch_size,
+                prepare_text=prepare,
+            )
         else:
             how = "name reconciliation against the live Wikidata endpoint"
             rows_iter = tabular.link_records(records, name, TABULAR[name], universe)
@@ -133,8 +158,16 @@ def main(argv: list[str] | None = None) -> int:
                 ),
             ),
         )
-        linked = sum(1 for row in read_jsonl(output) if row["entities"])
-        print(f"{name}: {rows} documents, {linked} with at least one entity -> {output}")
+        linked = mentions = 0
+        distinct: set[str] = set()
+        for row in read_jsonl(output):
+            linked += bool(row["entities"])
+            mentions += len(row["entities"])
+            distinct.update(entity["qid"] for entity in row["entities"])
+        print(
+            f"{name}: {rows} documents, {linked} with at least one entity, "
+            f"{mentions} mentions over {len(distinct)} distinct entities -> {output}"
+        )
     return 0
 
 

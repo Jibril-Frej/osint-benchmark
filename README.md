@@ -43,7 +43,7 @@ Run in order. Each step reads the previous step's output from `data/`.
 | step | what it does | needs |
 | --- | --- | --- |
 | `01_sources.py` | fetch, parse and verify the corpora | network |
-| `02_link.py` | annotate documents with Wikidata entities | `uv sync --extra link`, or `--dictionary` |
+| `02_link.py` | annotate documents with Wikidata entities | a GPU and `uv sync --extra link`, or `--dictionary` |
 | `03_graph.py` | invert links into entity↔document bridges | — |
 | `04_public.py` | fetch public evidence for the bridge entities | network |
 | `05_pair.py` | pair one confidential document with one public record | — |
@@ -55,6 +55,24 @@ Run in order. Each step reads the previous step's output from `data/`.
 ```bash
 uv run python pipeline/01_sources.py            # all sources
 uv run python pipeline/01_sources.py cablegate  # just one
+```
+
+### Step 2
+
+ReFinED needs a GPU and its own extra. Without `--device cuda` it runs on the CPUs and
+takes a day.
+
+```bash
+uv sync --extra link
+uv run python pipeline/02_link.py cablegate --device cuda
+uv run python pipeline/02_link.py cablegate --dictionary --restrict-to sanctions  # no model
+```
+
+Settings are in [`config/link.toml`](config/link.toml). On Slurm, one job links the slice
+both ways and prints the two side by side:
+
+```bash
+sbatch --partition=<p> --qos=<q> --gpus=<type> cluster/link.sbatch
 ```
 
 ### Steps 6 and 7
@@ -102,10 +120,19 @@ answers were written against.
 
 ## Prompts and parameters
 
-Every prompt sent to a model is a file in [`prompts/`](prompts/). Every parameter governing
-one — temperature, token ceiling, sample count — is in
-[`config/models.toml`](config/models.toml). Read both together; neither is correct alone.
-No prompt text appears in any `.py` file, and a test fails if it reappears there.
+Every prompt sent to a model is a file in [`prompts/`](prompts/). Every parameter is in
+`config/`:
+
+| file | governs |
+| --- | --- |
+| [`config/models.toml`](config/models.toml) | temperature, token ceiling, sample count, which model in which role |
+| [`config/link.toml`](config/link.toml) | the linker: checkpoint, entity set, confidence floor, batch size |
+
+Read `prompts/` and `config/models.toml` together; neither is correct alone. No prompt text
+appears in any `.py` file, and a test fails if it reappears there.
+
+`OSINT_CONFIG` points at a whole alternative set — [`config/smoke/`](config/smoke/) is the
+one the smoke run uses.
 
 ## Where the data goes
 
@@ -119,3 +146,16 @@ data/items/   questions                    releases/    frozen versions
 
 All gitignored. Four environment variables move the roots: `OSINT_DATA` (everything
 derived), `OSINT_RAW`, `OSINT_DOCS`, `OSINT_PINS`.
+
+## Repository layout
+
+| directory | holds |
+| --- | --- |
+| `pipeline/` | the nine numbered entry points, run in order |
+| `osint_benchmark/` | the library each of them calls |
+| `config/` | every tunable parameter |
+| `prompts/` | every prompt sent to a model |
+| `pins/` | source checksums and corpus fingerprints |
+| `cluster/` | Slurm jobs |
+| `tests/` | `uv run pytest -q` |
+| `docs/` | why the pipeline is shaped this way |

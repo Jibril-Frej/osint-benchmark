@@ -9,14 +9,20 @@ from __future__ import annotations
 import pytest
 
 from osint_benchmark.link import reconcile
-from osint_benchmark.link.refined import Mention, keep, link_documents
+from osint_benchmark.link.refined import (
+    Mention,
+    keep,
+    link_documents,
+    narrative_body,
+    per_document,
+)
 
 UNIVERSE = frozenset({"Q1", "Q2", "Q3"})
 
 
 def _linker(*mentions: Mention):
     """Return a linker that always yields the given mentions."""
-    return lambda text: list(mentions)
+    return per_document(lambda text: list(mentions))
 
 
 class TestKeep:
@@ -24,9 +30,17 @@ class TestKeep:
 
     def test_a_low_confidence_mention_is_dropped(self):
         """ReFinED will resolve almost anything if asked."""
-        mentions = [Mention("Q1", "Bern", 0.5, "GPE"), Mention("Q2", "Iran", 0.95, "GPE")]
+        mentions = [Mention("Q1", "Bern", 0.2, "GPE"), Mention("Q2", "Iran", 0.95, "GPE")]
 
         assert [m.qid for m in keep(mentions, UNIVERSE)] == ["Q2"]
+
+    def test_an_unrecognised_type_is_kept(self):
+        """The type filter is a denylist because this model's types cannot be trusted.
+
+        It labels countries ORG. An allowlist drops whatever it failed to anticipate, and
+        what may anchor a bridge is decided from Wikidata in step 3, not from here.
+        """
+        assert len(keep([Mention("Q1", "x", 0.99, "SOMETHING_NEW")], UNIVERSE)) == 1
 
     def test_an_entity_outside_the_public_set_is_dropped(self):
         """An entity with no English article cannot bridge to the public corpus."""
@@ -73,6 +87,69 @@ class TestLinkDocuments:
         row = next(link_documents([{"doc_id": "1", "text": "x"}], linker, "private", UNIVERSE))
 
         assert [e["qid"] for e in row["entities"]] == ["Q1", "Q3"]
+
+
+class TestNarrativeBody:
+    """What the linker is shown decides what it can find; a cable is not all narrative."""
+
+    def test_the_routing_preamble_is_dropped(self):
+        """It is full of capitalised tokens and about nothing."""
+        cable = "VZCZCXRO1234\nRR RUEHWEB\nSUBJECT: X\n\n1. (C) The minister said so.\nSMITH"
+
+        assert narrative_body(cable) == "1. (C) The minister said so."
+
+    def test_the_drafter_signature_is_dropped(self):
+        """A cable's last line is a surname, and it is the corpus's favourite mislink."""
+        assert narrative_body("\n1. (S) Text here.\nRICE").endswith("Text here.")
+
+    def test_a_cable_with_no_numbered_paragraph_keeps_its_body(self):
+        """Not every cable is formatted; losing them all would be worse than the noise."""
+        assert narrative_body("Just some prose.") == "Just some prose."
+
+    def test_a_long_last_line_is_narrative_not_a_signature(self):
+        """Only a short trailing line is a name."""
+        body = "\n1. (C) One.\nThis sentence is plainly not somebody's surname at all."
+
+        assert narrative_body(body).endswith("surname at all.")
+
+
+class TestBatching:
+    """ReFinED is far faster per batch, so the interface is a batch one."""
+
+    def test_documents_are_linked_in_batches_and_stay_in_order(self):
+        """A reordered batch would attach one cable's entities to another cable."""
+        seen = []
+
+        def linker(texts):
+            seen.append(len(texts))
+            return [[Mention(f"Q{text}", text, 0.99, "ORG")] for text in texts]
+
+        documents = [{"doc_id": str(i), "text": str(i)} for i in range(1, 6)]
+        rows = list(link_documents(documents, linker, "private", None, batch_size=2))
+
+        assert seen == [2, 2, 1]
+        assert [row["doc_id"] for row in rows] == ["1", "2", "3", "4", "5"]
+        assert [row["entities"][0]["qid"] for row in rows] == ["Q1", "Q2", "Q3", "Q4", "Q5"]
+
+    def test_the_text_is_prepared_before_it_reaches_the_model(self):
+        """Cables arrive ALL CAPS with a routing preamble; linking them raw finds little."""
+        shown = []
+
+        def linker(texts):
+            shown.extend(texts)
+            return [[] for _ in texts]
+
+        list(
+            link_documents(
+                [{"doc_id": "1", "text": "RAW"}],
+                linker,
+                "private",
+                None,
+                prepare_text=str.lower,
+            )
+        )
+
+        assert shown == ["raw"]
 
 
 class TestReconcile:

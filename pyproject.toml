@@ -18,8 +18,13 @@ dependencies = []
 [project.optional-dependencies]
 link = [
     "refined @ git+https://github.com/amazon-science/ReFinED.git",
+    # Pinned: ReFinED reads a tokenizer API that later releases removed.
     "transformers==4.46.*",
     "torch",
+    # Cablegate is transmitted in upper case, and a linker trained on cased English gets
+    # almost nothing from it. This one dependency is worth more than every threshold in
+    # osint_benchmark/link/refined.py.
+    "truecase",
 ]
 
 [dependency-groups]

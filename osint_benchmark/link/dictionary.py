@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable, Iterator
 
-from osint_benchmark.link.refined import Mention
+from osint_benchmark.link.refined import Mention, per_document
 
 # Single-word titles are unusable here. Wikipedia has articles called "Told", "Right",
 # "Last" and "Claim", and the cables are ALL CAPS -- which destroys the capitalisation that
@@ -71,7 +71,10 @@ def build_dictionary(
 
 
 def linker(dictionary: dict[str, str], max_words: int = 6):
-    """Return a :data:`~osint_benchmark.link.refined.Linker` over a title dictionary."""
+    """Return a :data:`~osint_benchmark.link.refined.Linker` over a title dictionary.
+
+    Batched only to satisfy the interface: there is nothing to gain from a batch here.
+    """
     tokens = re.compile(r"\w[\w'-]*")
 
     def link(text: str) -> Iterator[Mention]:
@@ -93,4 +96,4 @@ def linker(dictionary: dict[str, str], max_words: int = 6):
                 # about whether the right entity was chosen -- that is what it cannot do.
                 yield Mention(qid=qid, surface_form=phrase, confidence=1.0, entity_type="ORG")
 
-    return link
+    return per_document(link)

@@ -36,11 +36,6 @@ class Settings:
     samples: int
 
 
-def config_dir() -> Path:
-    """Return the directory holding the parameter files."""
-    return Path(os.environ.get("OSINT_CONFIG", paths.ROOT / "config"))
-
-
 def load(role: str, config_file: Path | None = None) -> Settings:
     """Return the settings for one model role.
 
@@ -50,7 +45,7 @@ def load(role: str, config_file: Path | None = None) -> Settings:
     Raises:
         KeyError: If the role has no section, or a section is missing a setting.
     """
-    path = config_file or (config_dir() / "models.toml")
+    path = config_file or (paths.config_dir() / "models.toml")
     config = tomllib.loads(path.read_text(encoding="utf-8"))
     if role not in config:
         raise KeyError(f"no [{role}] section in {path}; known: {', '.join(sorted(config))}")
