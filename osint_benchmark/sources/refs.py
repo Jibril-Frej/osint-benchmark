@@ -26,15 +26,23 @@ from __future__ import annotations
 
 SEPARATOR = ":"
 
-# Which key carries a record's date, per source. Absent means the source has no usable
-# date and its documents are undated rather than wrongly dated.
+# Which key carries a record's date, per source, best first. Absent means the source has no
+# usable date and its documents are undated rather than wrongly dated.
+#
+# Sanctions takes two because the obvious one is wrong. `list_date` is the *export's* own
+# date attribute: every record in a download carries the same value, so an interval
+# computed from it measures when the file was fetched rather than when anything happened.
+# `added` is the enactment date of that particular listing, which is the date a question
+# about timing would mean. Reading list_date first left every pair non-contemporaneous
+# against a constant -- the same symptom as reading no date at all, and I reported it as a
+# fact about the corpora twice before looking.
 DATE_FIELDS = {
-    "cablegate": "date",
-    "dodis": "date",
-    "sanctions": "list_date",
-    "ucdp": "date_start",
-    "gdelt": "date",
-    "parliament": "date",
+    "cablegate": ("date",),
+    "dodis": ("date",),
+    "sanctions": ("added", "list_date"),
+    "ucdp": ("date_start",),
+    "gdelt": ("date",),
+    "parliament": ("date",),
 }
 
 
@@ -55,6 +63,12 @@ def split(reference: str) -> tuple[str, str]:
 
 
 def record_date(source: str, record: dict) -> str | None:
-    """Return a record's date, under whatever key this source calls it."""
-    field = DATE_FIELDS.get(source)
-    return record.get(field) if field else None
+    """Return a record's date, under whatever key this source calls it.
+
+    The first field that has a value wins, so a source can name a precise date and fall
+    back to a coarse one rather than to nothing.
+    """
+    for field in DATE_FIELDS.get(source, ()):
+        if value := record.get(field):
+            return str(value)
+    return None

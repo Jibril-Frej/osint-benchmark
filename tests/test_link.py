@@ -461,3 +461,44 @@ class TestNameLength:
         from osint_benchmark.link.tabular import names_in
 
         assert names_in({"country": "Afghanistan"}, ("country",)) == ["Afghanistan"]
+
+
+class TestReferences:
+    """A document's name, and its date, once it has left its own corpus."""
+
+    def test_a_document_is_named_by_its_source(self):
+        """Bare ids collide across corpora; `47703` named a cable and a sanctions target."""
+        from osint_benchmark.sources import refs
+
+        assert refs.ref("sanctions", "47703") == "sanctions:47703"
+        assert refs.split("sanctions:47703") == ("sanctions", "47703")
+
+    def test_an_id_containing_the_separator_survives_the_round_trip(self):
+        """Article ids were namespaced as enwiki:Q42 long before this existed."""
+        from osint_benchmark.sources import refs
+
+        assert refs.split("enwiki:Q42") == ("enwiki", "Q42")
+
+    def test_the_enactment_date_beats_the_export_date(self):
+        """`list_date` is the same value for every record in a download.
+
+        An interval computed from it measures when the file was fetched. `added` is when
+        that listing happened, which is what a question about timing would mean.
+        """
+        from osint_benchmark.sources import refs
+
+        record = {"added": "2011-05-02", "list_date": "2026-07-27"}
+
+        assert refs.record_date("sanctions", record) == "2011-05-02"
+
+    def test_the_export_date_is_still_better_than_nothing(self):
+        """Not every listing records when it was added."""
+        from osint_benchmark.sources import refs
+
+        assert refs.record_date("sanctions", {"list_date": "2026-07-27"}) == "2026-07-27"
+
+    def test_a_source_with_no_known_date_field_is_undated(self):
+        """Undated, rather than wrongly dated from whatever field happens to parse."""
+        from osint_benchmark.sources import refs
+
+        assert refs.record_date("wikipedia_index", {"date": "2020-01-01"}) is None
