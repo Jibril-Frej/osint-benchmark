@@ -42,14 +42,27 @@ class ModelUnavailable(RuntimeError):
 def strip_reasoning(reply: str) -> str:
     """Return a reply with any reasoning trace removed.
 
-    An *unclosed* trace means the reply hit its token ceiling mid-thought. That is a
-    truncation, not an answer, and it returns empty so the caller treats it as a failure to
-    answer rather than scoring the deliberation. In the previous project the opposite
-    happened: every truncated reply scored as a failure to answer, which silently marked
-    every question necessary.
+    Three shapes, and only the first is the obvious one:
+
+    * **Matched tags.** The trace is between them and comes out.
+    * **An opening tag with no closing one.** The reply hit its token ceiling mid-thought.
+      That is a truncation, not an answer, so it returns empty and the caller treats it as
+      a failure to answer rather than scoring the deliberation. In the previous project the
+      opposite happened, which silently marked every question necessary.
+    * **A closing tag with no opening one.** The serving template opened the block itself.
+      vLLM's chat template for QwQ appends ``<think>`` to the *prompt*, so the model's
+      completion begins inside the trace and only ever emits ``</think>``. Nothing matches,
+      the whole reasoning trace survives as the "answer", and a caller looking for JSON
+      finds a brace somewhere in the deliberation and fails to parse. This accounted for 80
+      of 80 discarded drafts on job 13350, and for the 79 of 80 on job 13349 that I had
+      blamed on the token budget.
     """
-    if "<think>" in reply.lower() and "</think>" not in reply.lower():
+    lowered = reply.lower()
+    opened, closed = "<think>" in lowered, "</think>" in lowered
+    if opened and not closed:
         return ""
+    if closed and not opened:
+        return reply[lowered.rfind("</think>") + len("</think>") :].strip()
     return THINK.sub("", reply).strip()
 
 

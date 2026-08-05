@@ -122,6 +122,22 @@ class TestModelPlumbing:
         """Reading it as one turns a verdict into a paragraph of deliberation."""
         assert strip_reasoning("<think>weighing it up</think>SUPPORTED") == "SUPPORTED"
 
+    def test_a_trace_the_template_opened_is_still_a_trace(self):
+        """The QwQ template in vLLM appends <think> to the prompt; the reply only closes it.
+
+        Nothing matches, the whole deliberation survives as the "answer", and a caller
+        looking for JSON finds a brace mid-sentence. 80 of 80 drafts on job 13350.
+        """
+        reply = 'Let me consider {maybe} this.</think>{"question": "Q?", "answer": "A"}'
+
+        assert strip_reasoning(reply) == '{"question": "Q?", "answer": "A"}'
+
+    def test_the_last_closing_tag_is_the_one_that_counts(self):
+        """A trace that discusses the tag itself must not split the reply early."""
+        reply = "First I note </think> appears in the format.</think>ANSWER"
+
+        assert strip_reasoning(reply) == "ANSWER"
+
     def test_an_unclosed_trace_is_a_truncation_not_an_answer(self):
         """The reply hit its ceiling mid-thought.
 
