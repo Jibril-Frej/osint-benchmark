@@ -66,6 +66,18 @@ def refined(config_file: Path | None = None) -> RefinedSettings:
     )
 
 
+def reconcile(config_file: Path | None = None) -> bool:
+    """Return whether name reconciliation may match aliases as well as article titles.
+
+    Raises:
+        KeyError: If the setting is missing.
+    """
+    section = _table("reconcile", config_file)
+    if "aliases" not in section:
+        raise KeyError("[reconcile] in link.toml is missing: aliases")
+    return bool(section["aliases"])
+
+
 def dictionary(config_file: Path | None = None) -> tuple[int, int]:
     """Return ``(min_title_words, min_title_chars)`` for the no-model fallback.
 

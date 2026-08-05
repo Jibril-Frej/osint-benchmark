@@ -23,6 +23,16 @@ batch_size = 64
 # thousand; past that the marginal mention is a boilerplate footer.
 max_chars = 4000
 
+[reconcile]
+# How the tabular sources -- sanctions, the event lists -- get their QIDs.
+#
+# Matching aliases as well as article titles is the widest lever on the join: 302 of 8,604
+# sanctions targets resolved on titles alone, and the 284 distinct entities that produced
+# are the hard ceiling on how many bridges can exist, however good the private linker is.
+# A sanctions list spells people the way a legal instrument does, and Wikidata files those
+# spellings as aliases. A title match still beats an alias match outright.
+aliases = true
+
 [dictionary]
 # The no-model fallback (`--dictionary`). Both floors exist because Wikipedia has articles
 # called "Told" and "Has Been", and matching them case-insensitively against ALL-CAPS cable

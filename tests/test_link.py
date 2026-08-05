@@ -361,6 +361,73 @@ class TestReconcile:
         assert "wdt:P31" in seen[0]
         assert "wd:Q5" in seen[0]
 
+    def test_aliases_are_matched_as_well_as_titles(self):
+        """The widest lever on the join: 284 entities is the ceiling on bridges.
+
+        A sanctions list spells people the way a legal instrument does, and Wikidata files
+        those spellings as aliases rather than article titles.
+        """
+        seen = []
+
+        def query(text):
+            seen.append(text)
+            return []
+
+        reconcile.by_label(["A Name"], query=query)
+
+        assert "skos:altLabel" in seen[0]
+
+    def test_aliases_can_be_turned_off(self):
+        """Their cost is precision, so the choice is a setting rather than a default."""
+        seen = []
+
+        def query(text):
+            seen.append(text)
+            return []
+
+        reconcile.by_label(["A Name"], query=query, aliases=False)
+
+        assert "skos:altLabel" not in seen[0]
+
+    def test_a_title_match_beats_an_alias_match(self):
+        """Merging them manufactures ambiguity, and the caller drops anything ambiguous.
+
+        So admitting aliases indiscriminately would lose resolutions that already worked.
+        """
+        label = "http://www.w3.org/2000/01/rdf-schema#label"
+        alias = "http://www.w3.org/2004/02/skos/core#altLabel"
+
+        def query(text):
+            return [
+                {
+                    "s": {"value": "http://www.wikidata.org/entity/Q1"},
+                    "l": {"value": "Smith"},
+                    "p": {"value": label},
+                },
+                {
+                    "s": {"value": "http://www.wikidata.org/entity/Q2"},
+                    "l": {"value": "Smith"},
+                    "p": {"value": alias},
+                },
+            ]
+
+        assert reconcile.by_label(["Smith"], query=query) == {"Smith": ["Q1"]}
+
+    def test_an_alias_resolves_a_name_no_title_matches(self):
+        """Which is the entire point of asking for them."""
+        alias = "http://www.w3.org/2004/02/skos/core#altLabel"
+
+        def query(text):
+            return [
+                {
+                    "s": {"value": "http://www.wikidata.org/entity/Q7"},
+                    "l": {"value": "Formal Name"},
+                    "p": {"value": alias},
+                }
+            ]
+
+        assert reconcile.by_label(["Formal Name"], query=query) == {"Formal Name": ["Q7"]}
+
     def test_names_are_batched(self):
         """Larger batches drew closed connections against the previous endpoint."""
         seen = []

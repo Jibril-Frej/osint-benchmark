@@ -22,7 +22,7 @@ from functools import partial
 
 from osint_benchmark import paths
 from osint_benchmark.artifacts import Provenance, read_jsonl, write_records
-from osint_benchmark.link import dictionary, merge, refined, tabular
+from osint_benchmark.link import dictionary, merge, reconcile, refined, tabular
 from osint_benchmark.link import settings as link_settings
 from osint_benchmark.sources import base, get_source
 
@@ -124,6 +124,7 @@ def main(argv: list[str] | None = None) -> int:
 
     settings = link_settings.refined()
     min_title_words, min_title_chars = link_settings.dictionary()
+    use_aliases = link_settings.reconcile()
 
     def title_linker() -> tuple[refined.Linker, str]:
         """Return the no-model linker and a description of what it was scoped to."""
@@ -212,7 +213,15 @@ def main(argv: list[str] | None = None) -> int:
                 how = f"{method}, merged with {also_method}"
         else:
             how = "name reconciliation against the live Wikidata endpoint"
-            rows_iter = tabular.link_records(records, name, TABULAR[name], universe)
+            if use_aliases:
+                how += ", matching aliases as well as article titles"
+            rows_iter = tabular.link_records(
+                records,
+                name,
+                TABULAR[name],
+                universe,
+                resolve=partial(reconcile.by_label, aliases=use_aliases),
+            )
 
         output = paths.data_dir() / "links" / f"{name}.jsonl"
         rows = write_records(

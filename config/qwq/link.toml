@@ -29,3 +29,6 @@ max_chars = 4000
 # text turned 200 cables into 51,499 mentions of nothing.
 min_title_words = 2
 min_title_chars = 6
+
+[reconcile]
+aliases = true

@@ -14,3 +14,6 @@ max_chars = 4000
 [dictionary]
 min_title_words = 2
 min_title_chars = 6
+
+[reconcile]
+aliases = true

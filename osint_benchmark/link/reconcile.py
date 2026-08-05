@@ -41,7 +41,10 @@ PREFIXES = (
     "PREFIX wdt: <http://www.wikidata.org/prop/direct/> "
     "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> "
     "PREFIX schema: <http://schema.org/> "
+    "PREFIX skos: <http://www.w3.org/2004/02/skos/core#> "
 )
+
+LABEL = "http://www.w3.org/2000/01/rdf-schema#label"
 
 # External identifier schemes the tabular sources already carry. Resolving on these is
 # exact: no name matching, no ranking, no judgement.
@@ -127,33 +130,53 @@ def by_label(
     kinds: Iterable[str] = (),
     query: Query = sparql,
     batch: int = 60,
+    aliases: bool = True,
 ) -> dict[str, list[str]]:
-    """Return ``name -> candidate QIDs`` by exact English label, optionally typed.
+    """Return ``name -> candidate QIDs`` by exact English name, optionally typed.
 
-    Candidates, not answers: a label match is ambiguous by construction and the caller
+    Candidates, not answers: a name match is ambiguous by construction and the caller
     decides. ``kinds`` are ``P31`` values (human, business, sovereign state); when given, a
     candidate must be an instance of one of them, which is what stops a person resolving
     to a company of the same name.
+
+    ``aliases`` also matches ``skos:altLabel``. This is the widest lever available on the
+    join: only 302 of 8,604 sanctions targets resolved on labels alone, and 284 distinct
+    entities is the ceiling on how many bridges can exist, whatever the private linker
+    finds. Sanctions lists spell people the way a legal instrument does — full formal
+    names, official transliterations — and Wikidata usually files those as aliases and
+    titles its article something shorter.
+
+    **A label beats an alias.** When a name matches both, only the label candidates are
+    returned. Merging them would manufacture ambiguity — two candidates instead of one —
+    and the caller drops anything ambiguous, so admitting aliases indiscriminately would
+    *lose* resolutions that already worked.
 
     Batched at 60 names per query -- larger batches drew "remote end closed connection"
     against the previous project's endpoint.
     """
     wanted = [n for n in dict.fromkeys(names) if n and n.strip()]
-    found: dict[str, list[str]] = {}
+    by_kind: dict[bool, dict[str, list[str]]] = {True: {}, False: {}}
     kind_values = " ".join(f"wd:{k}" for k in kinds)
+    predicates = "rdfs:label skos:altLabel" if aliases else "rdfs:label"
     for start in range(0, len(wanted), batch):
         chunk = wanted[start : start + batch]
         values = " ".join(json.dumps(n) + "@en" for n in chunk)
-        where = f"VALUES ?l {{ {values} }} ?s rdfs:label ?l ."
+        where = f"VALUES ?l {{ {values} }} VALUES ?p {{ {predicates} }} ?s ?p ?l ."
         if kind_values:
             where += f" VALUES ?k {{ {kind_values} }} ?s wdt:P31 ?k ."
-        for row in query(f"SELECT DISTINCT ?s ?l WHERE {{ {where} }}"):
+        for row in query(f"SELECT DISTINCT ?s ?l ?p WHERE {{ {where} }}"):
             qid = _qid(row)
-            if qid:
-                found.setdefault(row["l"]["value"], []).append(qid)
+            if not qid:
+                continue
+            is_label = row.get("p", {}).get("value", LABEL) == LABEL
+            candidates = by_kind[is_label].setdefault(row["l"]["value"], [])
+            if qid not in candidates:
+                candidates.append(qid)
         if BATCH_PAUSE_SECONDS:
             time.sleep(BATCH_PAUSE_SECONDS)
-    return found
+    resolved = dict(by_kind[False])  # alias matches
+    resolved.update(by_kind[True])  # a label match replaces them outright
+    return resolved
 
 
 def modified(qids: Iterable[str], query: Query = sparql) -> dict[str, str]:
