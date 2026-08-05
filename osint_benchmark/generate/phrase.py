@@ -24,6 +24,7 @@ import sys
 from collections import Counter
 from collections.abc import Iterator
 
+from osint_benchmark.generate.evidence import clip
 from osint_benchmark.generate.item import Evidence, Item
 from osint_benchmark.models import prompts
 from osint_benchmark.models.backend import (
@@ -32,11 +33,6 @@ from osint_benchmark.models.backend import (
     agree,
     first_word,
 )
-
-# Evidence is truncated to fit the context window. A cable can run to thousands of words
-# and a served model answers a prompt longer than its window with a bare 400, killing the
-# run. Truncating loses the tail of a long document; failing loses the whole run.
-EVIDENCE_CHARS = 6000
 
 ASKERS = (
     "a desk officer preparing a country brief",
@@ -60,13 +56,6 @@ def asker_for(item_id: str) -> str:
 def item_id(pair: dict) -> str:
     """Return a stable id for the item built from one pair."""
     return f"{pair['private_id']}|{pair['public_id']}|{pair['qid']}"
-
-
-def clip(text: str, limit: int = EVIDENCE_CHARS) -> str:
-    """Return text bounded to a character budget, marked where it was cut."""
-    if len(text) <= limit:
-        return text
-    return text[:limit].rstrip() + "\n[... truncated]"
 
 
 def draft(pair: dict, private_text: str, public_text: str, bridge: str, phraser: Complete) -> dict:

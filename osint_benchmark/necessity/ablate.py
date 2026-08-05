@@ -14,11 +14,13 @@ evidence conditions. Only the closed-book run saw them.
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Iterable, Iterator
 
+from osint_benchmark.generate.evidence import clip
 from osint_benchmark.generate.item import Item, Necessity
 from osint_benchmark.models import prompts
-from osint_benchmark.models.backend import Complete
+from osint_benchmark.models.backend import Complete, ModelUnavailable
 
 UNANSWERABLE = "unanswerable"
 NO_EVIDENCE = "(no evidence provided)"
@@ -30,7 +32,11 @@ def solved(question: str, evidence: str, solver: Complete) -> bool:
     An empty reply counts as *not* answered — that is a truncated reasoning trace, and the
     alternative is to score deliberation as an answer.
     """
-    reply = solver(prompts.render("necessity_solve", question=question, evidence=evidence))
+    # Clipped to the same budget step 6 uses. It was not, and step 7 therefore sent whole
+    # cables: a run wrote 135 questions and then died measuring the first one whose cable
+    # was long, on an HTTP 400 about token counts. The two stages read the same documents
+    # and must agree about how much of one fits.
+    reply = solver(prompts.render("necessity_solve", question=question, evidence=clip(evidence)))
     stripped = reply.strip().lower()
     return bool(stripped) and not stripped.startswith(UNANSWERABLE)
 
@@ -72,5 +78,11 @@ def measure_items(items: Iterable[Item], texts: dict[str, str], solver: Complete
     for item in items:
         private_text = " ".join(texts.get(e.doc_id, "") for e in item.private_evidence)
         public_text = " ".join(texts.get(e.doc_id, "") for e in item.public_evidence)
-        item.necessity = measure(item, private_text, public_text, solver)
+        # One unmeasurable question costs its own measurement and nothing else. Step 6
+        # already worked this way; step 7 did not, so a single bad call threw away the
+        # measurement of 135 questions that had taken four hours to write.
+        try:
+            item.necessity = measure(item, private_text, public_text, solver)
+        except ModelUnavailable as exc:
+            print(f"  unmeasured {item.item_id}: {exc}", file=sys.stderr)
         yield item

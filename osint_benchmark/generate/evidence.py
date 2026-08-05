@@ -22,6 +22,20 @@ def linked_sources() -> list[str]:
     return [path.stem for path in sorted(links.glob("*.jsonl")) if path.stem in ALL]
 
 
+# How much of a document any prompt may carry. A cable can run to tens of thousands of
+# characters and the served context is finite: step 6 clipped and step 7 did not, so a run
+# wrote 135 questions and then died measuring the first one whose cable was long, on an
+# HTTP 400 that named token counts and nothing about which stage or which document.
+EVIDENCE_CHARS = 6000
+
+
+def clip(text: str, limit: int = EVIDENCE_CHARS) -> str:
+    """Return text bounded to a character budget, marked where it was cut."""
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "\n[... truncated]"
+
+
 # Fields that identify the record rather than say anything about its subject. A question
 # built on one of these is a question about the filing system.
 NOT_EVIDENCE = frozenset({"doc_id", "sanctions_set_id", "programme_key", "lang", "source"})

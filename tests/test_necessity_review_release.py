@@ -85,6 +85,49 @@ class TestMeasure:
         assert ablate.control(lambda p: "green")
 
 
+class TestMeasureItems:
+    """What a run survives while measuring 135 questions."""
+
+    def test_the_evidence_is_clipped_to_the_same_budget_as_step_six(self):
+        """It was not, so step 7 sent whole cables and died on a 400 about token counts.
+
+        Both stages read the same documents; disagreeing about how much of one fits means
+        the second stage fails on exactly the documents the first one handled.
+        """
+        from osint_benchmark.generate.evidence import EVIDENCE_CHARS
+
+        seen = []
+
+        def solver(prompt):
+            seen.append(len(prompt))
+            return "UNANSWERABLE"
+
+        ablate.solved("Which body?", "x" * (EVIDENCE_CHARS * 3), solver)
+
+        assert max(seen) < EVIDENCE_CHARS * 2
+
+    def test_one_unmeasurable_question_does_not_lose_the_others(self):
+        """A single bad call threw away the measurement of 135 questions on job 13397."""
+        from osint_benchmark.models.backend import ModelUnavailable
+
+        calls = {"n": 0}
+
+        def solver(prompt):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise ModelUnavailable("400 Bad Request")
+            return "UNANSWERABLE"
+
+        items = [_item(item_id="a"), _item(item_id="b")]
+        texts = {"d0": "private text", "d1": "public text"}
+
+        measured = list(ablate.measure_items(items, texts, solver))
+
+        assert len(measured) == 2
+        assert not measured[0].necessity.measured
+        assert measured[1].necessity.needs_both
+
+
 class TestReviewPage:
     """One self-contained file: no server, no external asset."""
 
