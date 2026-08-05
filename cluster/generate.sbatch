@@ -125,8 +125,13 @@ echo "=== 1/8 sources (raw cached in $OSINT_RAW) ==="
 uv run python pipeline/01_sources.py cablegate sanctions wikipedia_index
 
 echo "=== 2/8 link ==="
+# The public side first: the title matcher below is scoped to the entities it names.
 uv run python pipeline/02_link.py sanctions --index wikipedia_index
-uv run python pipeline/02_link.py cablegate --index wikipedia_index --device cuda --stride "$STRIDE"
+# Both linkers, merged. They miss different entities -- measured on job 13340, the matcher
+# found 22 bridge entities ReFinED did not and ReFinED found 15 the matcher did not -- so
+# the union is 62 bridges against 40, for no extra model and no extra GPU time.
+uv run python pipeline/02_link.py cablegate --index wikipedia_index --device cuda \
+  --stride "$STRIDE" --and-dictionary --restrict-to sanctions
 
 echo "=== 3/8 graph ==="
 uv run python pipeline/03_graph.py
