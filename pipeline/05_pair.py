@@ -19,18 +19,24 @@ from osint_benchmark.artifacts import Provenance, read_jsonl, write_records
 from osint_benchmark.generate.evidence import linked_sources
 from osint_benchmark.graph import entity_types
 from osint_benchmark.pair import join
-from osint_benchmark.sources import base, get_source
+from osint_benchmark.sources import base, get_source, refs
 
 
 def document_dates(sources: list[str]) -> dict[str, str | None]:
-    """Return ``doc_id -> date`` for the given corpora."""
+    """Return ``source:doc_id -> date`` for the given corpora.
+
+    The date is read under whatever key each source calls it. Reading ``date`` from every
+    record left every sanctions listing undated -- it calls the field ``list_date`` -- so
+    no pair had an interval and every one was recorded as non-contemporaneous. That was
+    reported as a fact about the corpora covering different eras.
+    """
     dates: dict[str, str | None] = {}
     for name in sources:
         output = base.output_path(get_source(name))
         if not output.exists():
             continue
         for row in read_jsonl(output):
-            dates[row["doc_id"]] = row.get("date")
+            dates[refs.ref(name, row["doc_id"])] = refs.record_date(name, row)
     return dates
 
 

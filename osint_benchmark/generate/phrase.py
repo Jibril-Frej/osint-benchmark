@@ -144,6 +144,13 @@ def build_items(
         if not private_text or not public_text:
             outcomes["no_evidence"] += 1
             continue
+        if private_text == public_text:
+            # Both sides resolved to the same document. A question cannot need two
+            # documents when it has one, and the pipeline used to build them anyway: bare
+            # doc_ids collide across corpora, so the "public record" for sanctions target
+            # 47703 was cable 47703. Refuse rather than draft from it.
+            outcomes["same_document"] += 1
+            continue
 
         bridge = labels.get(pair["qid"], pair["qid"])
         # One unusable pair must not end the run. A model that refuses, times out or is

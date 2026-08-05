@@ -18,6 +18,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Iterator
 
 from osint_benchmark.link.reconcile import by_label
+from osint_benchmark.sources import refs
 
 # Where each tabular source keeps the names worth resolving, and what kind of thing those
 # names denote. The type constraint is what makes a name usable: "Afghanistan" alone
@@ -89,7 +90,10 @@ def link_records(
             seen.add(candidates[0])
             entities.append({"qid": candidates[0], "surface_form": name, "confidence": 1.0})
         yield {
-            "doc_id": row["doc_id"],
+            # Namespaced, because a bare doc_id is unique only inside its own corpus and
+            # everything downstream mixes them. See osint_benchmark.sources.refs.
+            "doc_id": refs.ref(source, row["doc_id"]),
+            "source": source,
             "side": side,
             "entities": sorted(entities, key=lambda e: e["qid"]),
         }

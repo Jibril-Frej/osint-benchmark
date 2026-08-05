@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from osint_benchmark import paths
 from osint_benchmark.artifacts import read_jsonl
-from osint_benchmark.sources import ALL, base, get_source
+from osint_benchmark.sources import ALL, base, get_source, refs
 
 
 def linked_sources() -> list[str]:
@@ -22,16 +22,56 @@ def linked_sources() -> list[str]:
     return [path.stem for path in sorted(links.glob("*.jsonl")) if path.stem in ALL]
 
 
+# Fields that identify the record rather than say anything about its subject. A question
+# built on one of these is a question about the filing system.
+NOT_EVIDENCE = frozenset({"doc_id", "sanctions_set_id", "programme_key", "lang", "source"})
+
+
+def record_text(row: dict) -> str:
+    """Return the evidence text of one record, rendering it if it has no prose.
+
+    The prose corpora carry ``text``. The tabular ones do not: a sanctions listing is a
+    name, a programme, a set of measures and a justification, held in separate fields, and
+    the evidence lookup simply skipped any record without ``text``. That left the public
+    side of every pair with no evidence at all — invisible until the id collision that was
+    substituting a cable for it got fixed.
+
+    Rendered as ``field: value`` lines rather than a prose template. The fields differ per
+    source and a template per source is a thing to keep in step with six parsers; the field
+    names are already the parser's considered vocabulary.
+    """
+    if row.get("text"):
+        return str(row["text"])
+    lines = []
+    for key, value in row.items():
+        if key in NOT_EVIDENCE or not value:
+            continue
+        if isinstance(value, list):
+            parts = [str(v) for v in value if v and not isinstance(v, dict)]
+            if not parts:
+                continue
+            value = "; ".join(parts)
+        elif isinstance(value, dict):
+            continue
+        lines.append(f"{key.replace('_', ' ')}: {value}")
+    return "\n".join(lines)
+
+
 def evidence_texts(sources: list[str] | None = None) -> dict[str, str]:
-    """Return ``doc_id -> text`` for the linked corpora and the fetched article leads."""
+    """Return ``source:doc_id -> text`` for the linked corpora and the fetched article leads.
+
+    Namespaced, and this is the lookup that made the case for namespacing: keyed by bare
+    ``doc_id`` it returned cable 47703 as the "public record" for sanctions target 47703,
+    and every pair became a cable beside an unrelated cable.
+    """
     texts: dict[str, str] = {}
     for name in sources if sources is not None else linked_sources():
         output = base.output_path(get_source(name))
         if not output.exists():
             continue
         for row in read_jsonl(output):
-            if row.get("text"):
-                texts[row["doc_id"]] = row["text"]
+            if rendered := record_text(row):
+                texts[refs.ref(name, row["doc_id"])] = rendered
     articles = paths.data_dir() / "facts" / "articles.jsonl"
     if articles.exists():
         for row in read_jsonl(articles):

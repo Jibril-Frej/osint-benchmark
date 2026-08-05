@@ -195,13 +195,16 @@ def main(argv: list[str] | None = None) -> int:
                 confidence=settings.confidence,
                 batch_size=settings.batch_size,
                 prepare_text=prepare,
+                source=name,
             )
             if also is not None:
                 # A second pass over the same documents, held whole: it only ever looks for
                 # the entities the public side named, so it is small by construction.
                 extra = {
                     row["doc_id"]: row["entities"]
-                    for row in refined.link_documents(selected(name), also, PROSE[name], universe)
+                    for row in refined.link_documents(
+                        selected(name), also, PROSE[name], universe, source=name
+                    )
                     if row["entities"]
                 }
                 print(f"{name}: title match adds entities to {len(extra)} documents")

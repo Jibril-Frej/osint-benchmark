@@ -69,7 +69,24 @@ class TestLinkDocuments:
         """
         rows = list(link_documents([{"doc_id": "1", "text": "x"}], _linker(), "private", UNIVERSE))
 
-        assert rows == [{"doc_id": "1", "side": "private", "entities": []}]
+        assert rows == [{"doc_id": "1", "source": "", "side": "private", "entities": []}]
+
+    def test_the_document_is_named_by_its_source(self):
+        """A bare doc_id is unique only inside its own corpus.
+
+        Cablegate numbers its cables and the sanctions export numbers its targets, both
+        from one, so `47703` named two different documents. The evidence lookup handed the
+        question writer cable 47703 as the public record for sanctions target 47703, and
+        every pair was a cable beside an unrelated cable for four runs.
+        """
+        rows = list(
+            link_documents(
+                [{"doc_id": "47703", "text": "x"}], _linker(), "public", None, source="sanctions"
+            )
+        )
+
+        assert rows[0]["doc_id"] == "sanctions:47703"
+        assert rows[0]["source"] == "sanctions"
 
     def test_repeated_entities_collapse_to_the_best_mention(self):
         """A cable naming Iran twelve times is one bridge, at its best confidence."""

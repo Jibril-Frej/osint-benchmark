@@ -227,6 +227,45 @@ class TestDraft:
         assert len(askers) > 1
 
 
+class TestRecordText:
+    """A tabular record is evidence too, and used not to be."""
+
+    def test_prose_passes_through_untouched(self):
+        """The corpora that carry text are the ordinary case."""
+        from osint_benchmark.generate.evidence import record_text
+
+        assert record_text({"doc_id": "1", "text": "the cable body"}) == "the cable body"
+
+    def test_a_record_without_prose_is_rendered_from_its_fields(self):
+        """A sanctions listing has no `text`, so the evidence lookup skipped it entirely.
+
+        That left the public side of every pair with nothing, which was invisible while an
+        id collision was substituting a cable for it.
+        """
+        from osint_benchmark.generate.evidence import record_text
+
+        rendered = record_text(
+            {"doc_id": "47703", "names": ["A Name"], "measures": "asset freeze", "addresses": []}
+        )
+
+        assert "names: A Name" in rendered
+        assert "measures: asset freeze" in rendered
+
+    def test_bookkeeping_fields_are_not_evidence(self):
+        """A question resting on a set id is a question about the filing system."""
+        from osint_benchmark.generate.evidence import record_text
+
+        rendered = record_text({"doc_id": "1", "sanctions_set_id": "SSID-9", "names": ["A Name"]})
+
+        assert "SSID-9" not in rendered
+
+    def test_a_record_with_nothing_to_say_renders_empty(self):
+        """So it is counted as missing evidence rather than drafted from."""
+        from osint_benchmark.generate.evidence import record_text
+
+        assert record_text({"doc_id": "1", "sanctions_set_id": "SSID-9"}) == ""
+
+
 class TestBuildItems:
     """Drafting, verifying, and refusing to build from half a pair."""
 
@@ -283,6 +322,28 @@ class TestBuildItems:
 
         assert outcomes["no_evidence"] == 1
         assert outcomes["unparseable_draft"] == 1
+
+    def test_a_pair_that_resolves_to_one_document_is_refused(self):
+        """It cannot need two documents when it has one.
+
+        The last line of defence against an id collision across corpora: the pipeline
+        drafted from these for four runs, and the only reason it produced nothing was that
+        the model kept declining to invent a link between a cable and itself.
+        """
+        from collections import Counter
+
+        pairs = [{"private_id": "cablegate:1", "public_id": "sanctions:1", "qid": "Q1"}]
+        texts = {"cablegate:1": "the same text", "sanctions:1": "the same text"}
+        outcomes: Counter = Counter()
+
+        built = list(
+            phrase.build_items(
+                pairs, texts, {}, lambda p: "unused", lambda p: "SUPPORTED", 1, outcomes=outcomes
+            )
+        )
+
+        assert built == []
+        assert outcomes["same_document"] == 1
 
     def test_a_judge_rejection_is_counted_rather_than_vanishing(self):
         """It is the one loss that leaves no trace in any output file."""

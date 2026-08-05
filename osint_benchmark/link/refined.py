@@ -52,6 +52,8 @@ import re
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 
+from osint_benchmark.sources import refs
+
 # ReFinED resolves confidently and wrongly about as often as it resolves confidently and
 # rightly, so a high floor buys less than it costs. The previous project ran at 0.5 and
 # filtered afterwards on Wikidata types, which is the filter that actually discriminates.
@@ -237,6 +239,7 @@ def link_documents(
     text_field: str = "text",
     batch_size: int = DEFAULT_BATCH,
     prepare_text: Prepare | None = None,
+    source: str = "",
 ) -> Iterator[dict]:
     """Yield one link row per document, in the shape the graph step reads.
 
@@ -247,6 +250,9 @@ def link_documents(
     ``prepare_text`` is applied before linking and is not recorded: the row refers to the
     document, and what the linker was shown is a property of the run, held in the
     provenance sidecar.
+
+    ``source`` namespaces the emitted ``doc_id``. Everything downstream mixes corpora, and
+    a bare id is only unique within one — see :mod:`osint_benchmark.sources.refs`.
     """
     for chunk in _chunks(documents, batch_size):
         texts = [document.get(text_field) or "" for document in chunk]
@@ -259,7 +265,8 @@ def link_documents(
                 if best is None or mention.confidence > best.confidence:
                     deduplicated[mention.qid] = mention
             yield {
-                "doc_id": document["doc_id"],
+                "doc_id": refs.ref(source, document["doc_id"]) if source else document["doc_id"],
+                "source": source,
                 "side": side,
                 "entities": [
                     {
