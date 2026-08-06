@@ -22,7 +22,7 @@ import hashlib
 import json
 import sys
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 
 from osint_benchmark.generate.evidence import clip
 from osint_benchmark.generate.item import Evidence, Item
@@ -104,17 +104,20 @@ def verify(item: Item, private_text: str, public_text: str, judge: Complete, sam
     return verdict == "supported"
 
 
-def build_items(
+def draft_items(
     pairs: list[dict],
     texts: dict[str, str],
     labels: dict[str, str],
     phraser: Complete,
-    judge: Complete,
-    judge_samples: int = 3,
     question_type: str = "bridge",
     outcomes: Counter | None = None,
 ) -> Iterator[Item]:
-    """Yield one item per pair whose draft the judge can verify.
+    """Yield one unverified item per pair the phraser could write a question from.
+
+    Separate from verification so the two can run against *different models*, which they
+    must: a judge from the phraser's own family is scoring its own output, and 62 GB of
+    phraser plus 54 GB of judge does not fit in 80 GB of GPU. Drafting and judging in one
+    loop forced one model to do both.
 
     Pairs whose evidence is missing are skipped rather than drafted from half a pair: a
     question written from one document cannot need two.
@@ -170,6 +173,31 @@ def build_items(
             ],
             provenance={"bridge_qid": pair["qid"], "asker": asker_for(item_id(pair))},
         )
+        outcomes["drafted"] += 1
+        yield item
+
+
+def verify_items(
+    items: Iterable[Item],
+    texts: dict[str, str],
+    judge: Complete,
+    judge_samples: int = 3,
+    outcomes: Counter | None = None,
+) -> Iterator[Item]:
+    """Yield the drafted items the judge can verify against their own documents.
+
+    Reads the evidence back off each item, so this runs from a written draft file and a
+    served judge and needs nothing else — which is what lets the judge be a different
+    model, loaded after the phraser has been torn down.
+    """
+    if outcomes is None:
+        outcomes = Counter()
+    for item in items:
+        private_text = " ".join(texts.get(e.doc_id, "") for e in item.private_evidence)
+        public_text = " ".join(texts.get(e.doc_id, "") for e in item.public_evidence)
+        if not private_text or not public_text:
+            outcomes["no_evidence"] += 1
+            continue
         try:
             verified = verify(item, private_text, public_text, judge, judge_samples)
         except ModelUnavailable as exc:
@@ -184,3 +212,25 @@ def build_items(
             # rejected.jsonl: those hold what passed and failed the *gates*, and this
             # never gets that far. Silently, it looked like the pair had never existed.
             outcomes["judge_rejected"] += 1
+
+
+def build_items(
+    pairs: list[dict],
+    texts: dict[str, str],
+    labels: dict[str, str],
+    phraser: Complete,
+    judge: Complete,
+    judge_samples: int = 3,
+    question_type: str = "bridge",
+    outcomes: Counter | None = None,
+) -> Iterator[Item]:
+    """Draft and verify in one pass, for when one served model does both.
+
+    The single-model path: the stub runs, the smoke run, and any profile where phraser and
+    judge are the same. A release cannot be built this way — scoring your own output is
+    self-enhancement bias, not evaluation — so the two-pass path exists alongside it.
+    """
+    if outcomes is None:
+        outcomes = Counter()
+    drafted = draft_items(pairs, texts, labels, phraser, question_type, outcomes)
+    yield from verify_items(drafted, texts, judge, judge_samples, outcomes)

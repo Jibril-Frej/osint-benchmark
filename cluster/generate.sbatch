@@ -41,11 +41,17 @@
 #
 #   OSINT_GEN_LIMIT     pairs to draft from (default 80)
 #   OSINT_LINK_STRIDE   take every Nth cable (default 12, ~21k of 251k)
+#   OSINT_JUDGE_MODEL   a second model to judge with, served after the phraser is
+#                       torn down. Set it and the run uses config/split; leave it
+#                       unset and one model does both roles, which is a wiring
+#                       check rather than evidence.
 set -euo pipefail
 
 LIMIT="${OSINT_GEN_LIMIT:-80}"
 STRIDE="${OSINT_LINK_STRIDE:-12}"
 MODEL="${OSINT_GEN_MODEL:-Qwen/QwQ-32B}"
+# Set to serve a second model for judging, after the phraser is torn down.
+JUDGE_MODEL="${OSINT_JUDGE_MODEL:-}"
 PORT="${OSINT_SERVE_PORT:-8000}"
 export WORK="/scratch/$USER/osint-generate-$SLURM_JOB_ID"
 export OUT="$HOME/osint-generate-$SLURM_JOB_ID"
@@ -131,7 +137,10 @@ cd "$WORK/repo"
 uv sync -q --extra link
 uv run pytest -q
 
-export OSINT_CONFIG="$WORK/repo/config/qwq"
+# config/split names two models; config/qwq puts one in all three roles.
+[ -n "$JUDGE_MODEL" ] && PROFILE=split || PROFILE=qwq
+export OSINT_CONFIG="$WORK/repo/config/$PROFILE"
+echo "profile $PROFILE${JUDGE_MODEL:+ (judge: $JUDGE_MODEL)}"
 export OSINT_TRANSCRIPT="$WORK/model-calls.jsonl"
 
 echo "=== does the linker build? ==="
@@ -176,54 +185,86 @@ echo "=== fetching the weights before starting anything ==="
 # cache directory showed it had never downloaded a byte -- it was hung in NCCL. Fetching
 # first makes the download visible and resumable, and lets the readiness deadline below be
 # short enough that a hang costs minutes.
-"$VLLM_PY" - <<PY
+for model in "$MODEL" ${JUDGE_MODEL:+"$JUDGE_MODEL"}; do
+  "$VLLM_PY" - "$model" <<'PY'
+import sys
 from huggingface_hub import snapshot_download
-print("weights at", snapshot_download("$MODEL", max_workers=8), flush=True)
+print("weights at", snapshot_download(sys.argv[1], max_workers=8), flush=True)
 PY
+done
 du -sh "$HF_HOME/hub" 2>/dev/null || true
 
+# Serving is a function because the two-pass path does it twice: the phraser writes the
+# questions, is torn down, and the judge takes its place. 62 GB of QwQ plus 54 GB of Gemma
+# does not fit in the 80 GB of two A100s, and a judge from the phraser's own family is
+# scoring its own output -- so they take turns.
+#
 # --max-model-len 24576, not the 8192 of job 13349: a reasoning model needs room to reason
 # before it answers, and 8192 minus the evidence left QwQ truncated mid-thought on 79 of 80
-# questions. 62 GB of weights against 73 GB of usable memory leaves roughly 11 GB of KV
-# cache, which is about 42k tokens -- enough for one 24k sequence, and this client sends
-# one at a time.
-echo "=== starting vLLM: $MODEL on 2 GPUs ==="
-"$VLLM_PY" -m vllm.entrypoints.openai.api_server \
-  --model "$MODEL" --host 127.0.0.1 --port "$PORT" \
-  --tensor-parallel-size 2 --max-model-len 24576 --gpu-memory-utilization 0.92 \
-  --disable-custom-all-reduce \
-  > "$WORK/vllm.log" 2>&1 &
-SERVER_PID=$!
+# questions.
+serve() {
+  local model="$1"
+  echo "=== starting vLLM: $model on 2 GPUs ==="
+  "$VLLM_PY" -m vllm.entrypoints.openai.api_server \
+    --model "$model" --host 127.0.0.1 --port "$PORT" \
+    --tensor-parallel-size 2 --max-model-len 24576 --gpu-memory-utilization 0.92 \
+    --disable-custom-all-reduce \
+    >> "$WORK/vllm.log" 2>&1 &
+  SERVER_PID=$!
 
-# Readiness is "it answers", not "the process exists": the weights load and CUDA graphs
-# capture long after the process appears. The weights are already on disk by now, so this
-# only has to cover loading and compilation -- twenty minutes is generous for that, and a
-# hang is then cheap to discover rather than costing an hour and a half.
-echo "=== waiting for it to answer ==="
-deadline=$(( SECONDS + 1200 ))
-until curl -sf "http://127.0.0.1:$PORT/v1/models" >/dev/null 2>&1; do
-  if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-    echo "vLLM exited before becoming ready:" >&2
-    grep -nE "Error|error:|Traceback|Cannot|unsupported|out of memory" "$WORK/vllm.log" | head -20 >&2
-    echo "--- last 60 lines ---" >&2; tail -60 "$WORK/vllm.log" >&2
-    exit 1
-  fi
-  if [ "$SECONDS" -ge "$deadline" ]; then
-    echo "vLLM not ready in 1200s of loading:" >&2; tail -60 "$WORK/vllm.log" >&2; exit 1
-  fi
-  sleep 20
-done
-echo "ready after ${SECONDS}s"
-export OSINT_MODEL_ENDPOINT="http://127.0.0.1:$PORT"
+  # Readiness is "it answers", not "the process exists": the weights load and CUDA graphs
+  # capture long after the process appears.
+  echo "=== waiting for it to answer ==="
+  local deadline=$(( SECONDS + 1800 ))
+  until curl -sf "http://127.0.0.1:$PORT/v1/models" >/dev/null 2>&1; do
+    if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+      echo "vLLM exited before becoming ready:" >&2
+      grep -nE "Error|error:|Traceback|Cannot|unsupported|out of memory" "$WORK/vllm.log" | tail -20 >&2
+      echo "--- last 60 lines ---" >&2; tail -60 "$WORK/vllm.log" >&2
+      exit 1
+    fi
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      echo "vLLM not ready in 1800s of loading:" >&2; tail -60 "$WORK/vllm.log" >&2; exit 1
+    fi
+    sleep 20
+  done
+  echo "ready after ${SECONDS}s"
+  export OSINT_MODEL_ENDPOINT="http://127.0.0.1:$PORT"
+}
+
+unserve() {
+  # The GPUs have to be genuinely free before the next model loads, and a server wedged in
+  # a collective ignores SIGTERM.
+  [ -n "$SERVER_PID" ] || return 0
+  kill "$SERVER_PID" 2>/dev/null || true
+  for _ in $(seq 60); do kill -0 "$SERVER_PID" 2>/dev/null || break; sleep 1; done
+  kill -9 "$SERVER_PID" 2>/dev/null || true
+  SERVER_PID=""
+  sleep 10
+  nvidia-smi --query-gpu=memory.used --format=csv,noheader || true
+}
+
+serve "$MODEL"
+
+if [ -n "$JUDGE_MODEL" ]; then
+  echo "=== 6/8 generate: drafting $LIMIT pairs with $MODEL ==="
+  uv run python pipeline/06_generate.py --limit "$LIMIT" --draft
+  cp -f "$OSINT_DATA/items/drafted.jsonl" "$OUT/drafted.jsonl" 2>/dev/null || true
+  unserve
+  serve "$JUDGE_MODEL"
+  echo "=== 6/8 generate: judging with $JUDGE_MODEL ==="
+  uv run python pipeline/06_generate.py --verify
+  keep
+else
+  echo "=== 6/8 generate, $LIMIT pairs ==="
+  uv run python pipeline/06_generate.py --limit "$LIMIT"
+  keep
+fi
 
 echo "=== control: can the solver answer when the evidence contains the answer? ==="
 # Before any necessity number is worth reading. A solver that fails this makes every
 # question look perfectly necessary.
 uv run python pipeline/07_necessity.py --control || echo "CONTROL FAILED -- necessity below is not trustworthy"
-
-echo "=== 6/8 generate, $LIMIT pairs ==="
-uv run python pipeline/06_generate.py --limit "$LIMIT"
-keep
 
 echo "=== 7/8 necessity ==="
 uv run python pipeline/07_necessity.py

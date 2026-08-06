@@ -503,3 +503,73 @@ class TestSourcesFor:
         from osint_benchmark.generate.evidence import sources_for
 
         assert sources_for([self._with("enwiki:Q42")]) == []
+
+
+class TestTwoPass:
+    """Drafting and judging split, so they can run against different models."""
+
+    @staticmethod
+    def _pairs_and_texts():
+        """Return one pair and the evidence it cites."""
+        pairs = [{"private_id": "cablegate:1", "public_id": "sanctions:2", "qid": "Q1"}]
+        texts = {"cablegate:1": "private text", "sanctions:2": "public text"}
+        return pairs, texts
+
+    def test_drafting_asks_no_judge(self):
+        """The judge is 54 GB that has not been served yet."""
+        from collections import Counter
+
+        pairs, texts = self._pairs_and_texts()
+        drafted = '{"question": "Which body?", "answer": "the council"}'
+        outcomes: Counter = Counter()
+
+        items = list(phrase.draft_items(pairs, texts, {}, lambda p: drafted, outcomes=outcomes))
+
+        assert len(items) == 1
+        assert outcomes["drafted"] == 1
+        assert not items[0].gates
+
+    def test_verifying_reads_the_evidence_back_off_the_item(self):
+        """So the second pass needs a draft file and a judge, and nothing else."""
+        from collections import Counter
+
+        pairs, texts = self._pairs_and_texts()
+        drafted = '{"question": "Which body?", "answer": "the council"}'
+        items = list(phrase.draft_items(pairs, texts, {}, lambda p: drafted))
+        outcomes: Counter = Counter()
+
+        verified = list(phrase.verify_items(items, texts, lambda p: "SUPPORTED", 1, outcomes))
+
+        assert len(verified) == 1
+        assert outcomes["verified"] == 1
+
+    def test_the_two_passes_agree_with_doing_both_at_once(self):
+        """The one-pass path has to stay a composition of the two, not a second copy."""
+        pairs, texts = self._pairs_and_texts()
+        drafted = '{"question": "Which body?", "answer": "the council"}'
+
+        one_pass = list(
+            phrase.build_items(pairs, texts, {}, lambda p: drafted, lambda p: "SUPPORTED", 1)
+        )
+        two_pass = list(
+            phrase.verify_items(
+                phrase.draft_items(pairs, texts, {}, lambda p: drafted),
+                texts,
+                lambda p: "SUPPORTED",
+                1,
+            )
+        )
+
+        assert [i.to_json() for i in one_pass] == [i.to_json() for i in two_pass]
+
+    def test_a_draft_the_judge_rejects_is_still_counted(self):
+        """It reaches neither accepted.jsonl nor rejected.jsonl."""
+        from collections import Counter
+
+        pairs, texts = self._pairs_and_texts()
+        drafted = '{"question": "Which body?", "answer": "the council"}'
+        items = list(phrase.draft_items(pairs, texts, {}, lambda p: drafted))
+        outcomes: Counter = Counter()
+
+        assert list(phrase.verify_items(items, texts, lambda p: "UNSUPPORTED", 1, outcomes)) == []
+        assert outcomes["judge_rejected"] == 1

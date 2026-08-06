@@ -1,0 +1,40 @@
+# Two models, served one at a time: QwQ-32B writes, Gemma-3-27B judges.
+#
+# This is the profile a release may be built with. config/qwq puts one model in all three
+# roles, which is self-enhancement bias -- a model scoring its own output -- and is only
+# good for checking that the chain runs.
+#
+# They are never resident together: 62 GB of phraser plus 54 GB of judge does not fit in
+# the 80 GB of two A100s. cluster/generate.sbatch serves the phraser, drafts, tears it
+# down, then serves the judge and verifies. `endpoint` is the same for both because only
+# one of them is listening at a time.
+
+[phraser]
+model = "Qwen/QwQ-32B"
+endpoint = ""
+temperature = 0.7
+# A reasoning model needs room to reason before it answers. 4096 truncated 79 of 80 replies
+# inside the <think> block, before any JSON.
+max_tokens = 16384
+samples = 1
+
+[judge]
+# A different family, and deliberately not a reasoning model: the judge decides one thing
+# and answers in one word, so what it needs is judgement rather than deliberation. Gated on
+# Hugging Face -- the cluster jobs read a token from ~/.config/hf-token.
+model = "google/gemma-3-27b-it"
+endpoint = ""
+temperature = 0.7
+max_tokens = 2048
+# Repeat-and-agree: three samples, unanimous only. Meaningless at temperature 0, so the
+# repeats have to be able to differ.
+samples = 3
+
+[solver]
+# Re-solves finished questions under each ablation. The judge's model, because it is the
+# one still served when step 7 runs.
+model = "google/gemma-3-27b-it"
+endpoint = ""
+temperature = 0.7
+max_tokens = 4096
+samples = 1
