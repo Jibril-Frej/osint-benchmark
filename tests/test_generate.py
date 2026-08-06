@@ -474,3 +474,32 @@ class TestRobustnessAgainstOneBadCall:
         )
 
         assert built == []
+
+
+class TestSourcesFor:
+    """What makes steps 7 and 8 resumable from an accepted.jsonl alone."""
+
+    @staticmethod
+    def _with(*doc_ids):
+        """Return one item citing the given namespaced documents."""
+        return Item(
+            item_id="i",
+            question_type="bridge",
+            question="Which body?",
+            answer="the council",
+            evidence=[Evidence(doc_id=d, source="s", side="private") for d in doc_ids],
+        )
+
+    def test_the_corpora_are_read_off_the_items(self):
+        """Their evidence ids are namespaced, so the items declare what they need."""
+        from osint_benchmark.generate.evidence import sources_for
+
+        items = [self._with("cablegate:41701", "sanctions:47703")]
+
+        assert sources_for(items) == ["cablegate", "sanctions"]
+
+    def test_an_unknown_prefix_is_not_a_source(self):
+        """Article ids are namespaced too, and are fetched rather than parsed."""
+        from osint_benchmark.generate.evidence import sources_for
+
+        assert sources_for([self._with("enwiki:Q42")]) == []

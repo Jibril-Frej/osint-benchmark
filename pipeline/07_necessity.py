@@ -20,7 +20,7 @@ import sys
 
 from osint_benchmark import paths
 from osint_benchmark.artifacts import Provenance, write_records
-from osint_benchmark.generate.evidence import evidence_texts
+from osint_benchmark.generate.evidence import evidence_texts, sources_for
 from osint_benchmark.models import settings, stub, transcript
 from osint_benchmark.models.backend import ModelUnavailable, vllm
 from osint_benchmark.necessity import ablate
@@ -71,7 +71,13 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(f"{accepted} is missing: run pipeline/06_generate.py first")
 
     items = load_items(accepted)
-    measured = list(ablate.measure_items(items, evidence_texts(), solver))
+    # The corpora are read off the items rather than off whatever link files are lying
+    # about, so this step needs only step 1 and an accepted.jsonl. That is what lets a run
+    # that wrote its questions and then failed here be resumed for the cost of the
+    # measurement, instead of repeating four hours of linking and drafting.
+    sources = sources_for(items)
+    print(f"evidence from: {', '.join(sources) or 'nothing cited'}")
+    measured = list(ablate.measure_items(items, evidence_texts(sources), solver))
     output = paths.data_dir() / "items" / "measured.jsonl"
     write_records(
         output,

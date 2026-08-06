@@ -11,6 +11,8 @@ the step never finishes.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from osint_benchmark import paths
 from osint_benchmark.artifacts import read_jsonl
 from osint_benchmark.sources import ALL, base, get_source, refs
@@ -69,6 +71,18 @@ def record_text(row: dict) -> str:
             continue
         lines.append(f"{key.replace('_', ' ')}: {value}")
     return "\n".join(lines)
+
+
+def sources_for(items: Iterable) -> list[str]:
+    """Return the corpora a set of items cites, read off the items themselves.
+
+    What makes steps 7 and 8 resumable from an ``accepted.jsonl`` alone. Their evidence
+    ids are namespaced, so the items declare which corpora they need and nothing has to be
+    inferred from whichever link files happen to be lying about — which is the only other
+    way to know, and is wrong the moment a run is repeated with different sources.
+    """
+    named = {refs.split(evidence.doc_id)[0] for item in items for evidence in item.evidence}
+    return sorted(name for name in named if name in ALL)
 
 
 def evidence_texts(sources: list[str] | None = None) -> dict[str, str]:
