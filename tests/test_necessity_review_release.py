@@ -260,3 +260,32 @@ class TestCalibration:
         assert "both documents are needed" in rendered
         assert "the public record alone" in rendered
         assert "the judge verified it" in rendered
+
+
+class TestEvidenceReachesThePage:
+    """A page whose every document reads "(not available)" still looks complete."""
+
+    def test_the_page_says_so_when_evidence_is_missing(self):
+        """Rather than rendering an empty box that reads as an empty document."""
+        assert "(not available)" in page.render([_item()], {})
+
+    def test_the_corpora_are_taken_from_the_items(self):
+        """Not from whichever link files are on disk.
+
+        Rendering from an items file alone produced a page with every document missing --
+        the questions were there, the evidence they rest on was not.
+        """
+        from osint_benchmark.generate.evidence import sources_for
+
+        item = Item(
+            item_id="i",
+            question_type="bridge",
+            question="Which body?",
+            answer="the council",
+            evidence=[
+                Evidence(doc_id="cablegate:1", source="private", side="private"),
+                Evidence(doc_id="sanctions:2", source="public", side="public"),
+            ],
+        )
+
+        assert sources_for([item]) == ["cablegate", "sanctions"]

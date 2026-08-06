@@ -18,7 +18,7 @@ import argparse
 import json
 
 from osint_benchmark import paths
-from osint_benchmark.generate.evidence import evidence_texts
+from osint_benchmark.generate.evidence import evidence_texts, sources_for
 from osint_benchmark.release.load import load_items
 from osint_benchmark.review import calibrate, page
 
@@ -48,6 +48,11 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(f"no items in {items_dir}: run pipeline/06_generate.py first")
 
     items = load_items(source)
+    # Which corpora to read is taken from the items, not from whichever link files happen
+    # to be on disk. Rendering from an items file alone otherwise silently produced a page
+    # whose every document read "(not available)" -- the questions were there, the evidence
+    # they rest on was not, and the page still looked complete.
+    texts = evidence_texts(sources_for(items))
 
     if args.verdicts:
         decisions = json.loads(paths.ROOT.joinpath(args.verdicts).read_text(encoding="utf-8"))
@@ -71,12 +76,12 @@ def main(argv: list[str] | None = None) -> int:
         if not chosen:
             raise SystemExit(f"no measured items in {source}: run pipeline/07_necessity.py first")
         output = paths.data_dir() / "calibration.html"
-        output.write_text(calibrate.render(chosen, evidence_texts()), encoding="utf-8")
+        output.write_text(calibrate.render(chosen, texts), encoding="utf-8")
         needs = sum(1 for i in chosen if i.necessity.needs_both)
         print(f"{len(chosen)} questions ({needs} the pipeline calls necessary) -> {output}")
         return 0
 
-    html = page.render(items, evidence_texts())
+    html = page.render(items, texts)
     output = paths.data_dir() / "review.html"
     output.write_text(html, encoding="utf-8")
     print(f"{len(items)} questions -> {output}")
