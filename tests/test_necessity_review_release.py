@@ -27,19 +27,49 @@ def _item(item_id="c1|i1|Q1", **kw):
 
 
 class TestSolved:
-    """Whether the solver could answer under one condition."""
+    """Whether this evidence alone yields the right answer."""
+
+    GOLD = "the finance committee"
+
+    def _solved(self, reply, judge=None, gold=None):
+        """Run one ablation with a scripted solver."""
+        return ablate.solved("q", gold or self.GOLD, "evidence", lambda p: reply, judge)
 
     def test_unanswerable_means_it_could_not(self):
         """The reply the prompt asks for when the evidence does not carry the answer."""
-        assert not ablate.solved("q", "evidence", lambda p: "UNANSWERABLE")
+        assert not self._solved("UNANSWERABLE")
 
     def test_an_empty_reply_counts_as_not_answered(self):
         """That is a truncated reasoning trace; scoring it as an answer scores deliberation."""
-        assert not ablate.solved("q", "evidence", lambda p: "")
+        assert not self._solved("")
 
-    def test_an_answer_counts_as_answered(self):
-        """The condition succeeded, which means the question did not need what was withheld."""
-        assert ablate.solved("q", "evidence", lambda p: "the finance committee")
+    def test_a_right_answer_means_this_side_sufficed(self):
+        """The condition succeeded, so the question did not need what was withheld."""
+        assert self._solved("the finance committee", judge=lambda p: "MATCH")
+
+    def test_a_confident_wrong_answer_is_not_an_answer(self):
+        """The whole point. Producing an answer is not the same as knowing one.
+
+        Measuring the first gave 41% necessity with a cautious solver and 0% with an eager
+        one, on the identical questions. Both numbers described the solver.
+        """
+        assert not self._solved("the defence ministry", judge=lambda p: "DIFFERENT")
+
+    def test_the_gold_answer_is_what_it_is_compared_against(self):
+        """Not the question, and not the evidence."""
+        seen = []
+
+        def judge(prompt):
+            seen.append(prompt)
+            return "MATCH"
+
+        self._solved("an answer", judge=judge, gold="a very distinctive gold answer")
+
+        assert "a very distinctive gold answer" in seen[0]
+
+    def test_without_a_judge_any_answer_counts(self):
+        """The stub path, and the behaviour that was wrong for a served model."""
+        assert self._solved("anything at all")
 
 
 class TestMeasure:
@@ -102,7 +132,7 @@ class TestMeasureItems:
             seen.append(len(prompt))
             return "UNANSWERABLE"
 
-        ablate.solved("Which body?", "x" * (EVIDENCE_CHARS * 3), solver)
+        ablate.answered("Which body?", "x" * (EVIDENCE_CHARS * 3), solver)
 
         assert max(seen) < EVIDENCE_CHARS * 2
 

@@ -39,22 +39,36 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     solver_settings = settings.load("solver")
+    judge_settings = settings.load("judge")
     if args.stub:
-        solver = stub.solver()
+        solver, judge = stub.solver(), None
         model_note = "STUB: no model was used. These flags are placeholders."
         print(model_note, file=sys.stderr)
     else:
         try:
             solver = vllm(solver_settings)
+            # The same served model in both roles here, unlike step 6: this judge is not
+            # scoring anybody's output, only deciding whether two answers say the same
+            # thing, so there is no self-enhancement to avoid.
+            judge = vllm(judge_settings) if judge_settings.model == solver_settings.model else None
         except ModelUnavailable as exc:
             print(exc, file=sys.stderr)
             return 1
+        if judge is None:
+            print(
+                f"WARNING: judge is {judge_settings.model} but {solver_settings.model} is "
+                "served; ablation answers will not be checked for correctness",
+                file=sys.stderr,
+            )
         model_note = (
             f"Necessity measured by {solver_settings.model}: closed-book, public-only and "
-            "private-only. Recorded, never used to drop an item."
+            "private-only, each ablation answer checked against the gold answer. "
+            "Recorded, never used to drop an item."
         )
 
     solver = transcript.transcribed(solver, "solver")
+    if judge is not None:
+        judge = transcript.transcribed(judge, "equivalence")
     if transcript.transcript_path():
         print(f"transcribing model calls to {transcript.transcript_path()}")
 
@@ -75,9 +89,10 @@ def main(argv: list[str] | None = None) -> int:
     # about, so this step needs only step 1 and an accepted.jsonl. That is what lets a run
     # that wrote its questions and then failed here be resumed for the cost of the
     # measurement, instead of repeating four hours of linking and drafting.
+    samples = 1 if args.stub else judge_settings.samples
     sources = sources_for(items)
     print(f"evidence from: {', '.join(sources) or 'nothing cited'}")
-    measured = list(ablate.measure_items(items, evidence_texts(sources), solver))
+    measured = list(ablate.measure_items(items, evidence_texts(sources), solver, judge, samples))
     output = paths.data_dir() / "items" / "measured.jsonl"
     write_records(
         output,
