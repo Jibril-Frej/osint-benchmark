@@ -19,11 +19,18 @@
 #
 # Usage:
 #   sbatch --partition=<p> --qos=<q> --gpus=a100:2 \
-#     --export=ALL,OSINT_ITEMS=$HOME/osint-generate-13397/accepted.jsonl cluster/measure.sbatch
+#     --export=ALL,OSINT_ITEMS=<accepted.jsonl>[,OSINT_GEN_MODEL=...,OSINT_PROFILE=...] \
+#     cluster/measure.sbatch
+#
+# The profile must name the served model in its [solver] section, or every request
+# is a 404 for a model the server does not have.
 set -euo pipefail
 
 ITEMS="${OSINT_ITEMS:?set OSINT_ITEMS to an accepted.jsonl}"
 MODEL="${OSINT_GEN_MODEL:-Qwen/QwQ-32B}"
+# Which config names that model in the solver role.
+PROFILE="${OSINT_PROFILE:-qwq}"
+export OSINT_SERVED_MODEL="$MODEL"
 PORT="${OSINT_SERVE_PORT:-8000}"
 export WORK="/scratch/$USER/osint-measure-$SLURM_JOB_ID"
 export OUT="$HOME/osint-measure-$SLURM_JOB_ID"
@@ -82,7 +89,17 @@ cd "$WORK/repo"
 uv sync -q
 uv run pytest -q
 
-export OSINT_CONFIG="$WORK/repo/config/qwq"
+# The profile has to name the model actually being served: vLLM answers a request for a
+# model it is not serving with a 404, and the client takes its model name from the config.
+export OSINT_CONFIG="$WORK/repo/config/$PROFILE"
+uv run python -c "
+import os
+from osint_benchmark.models import settings
+s = settings.load('solver')
+served = os.environ['OSINT_SERVED_MODEL']
+assert s.model == served, f'config solver is {s.model} but serving {served}'
+print(f'solver: {s.model}, max_tokens {s.max_tokens}')
+"
 export OSINT_TRANSCRIPT="$WORK/model-calls.jsonl"
 
 # The questions being measured, put where step 7 looks for them.
