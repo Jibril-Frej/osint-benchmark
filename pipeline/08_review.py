@@ -20,13 +20,24 @@ import json
 from osint_benchmark import paths
 from osint_benchmark.generate.evidence import evidence_texts
 from osint_benchmark.release.load import load_items
-from osint_benchmark.review import page
+from osint_benchmark.review import calibrate, page
 
 
 def main(argv: list[str] | None = None) -> int:
     """Render the review page, or merge a completed review back."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--verdicts", help="a verdicts.json exported from the page")
+    parser.add_argument(
+        "--calibrate",
+        type=int,
+        metavar="N",
+        help=(
+            "render N questions, half from each side of the necessity verdict, asking "
+            "whether the pipeline got them right rather than whether they are good. The "
+            "judge and the ablations decide every figure this benchmark reports and "
+            "neither has been checked against a person"
+        ),
+    )
     args = parser.parse_args(argv)
 
     items_dir = paths.data_dir() / "items"
@@ -41,11 +52,28 @@ def main(argv: list[str] | None = None) -> int:
     if args.verdicts:
         decisions = json.loads(paths.ROOT.joinpath(args.verdicts).read_text(encoding="utf-8"))
         kept = [i for i in items if decisions.get(i.item_id) == "keep"]
+        dropped = [i for i in items if decisions.get(i.item_id) == "drop"]
+        undecided = len(items) - len(kept) - len(dropped)
         output = items_dir / "reviewed.jsonl"
         with output.open("w", encoding="utf-8") as handle:
             for item in kept:
                 handle.write(json.dumps(item.to_json(), ensure_ascii=False, sort_keys=True) + "\n")
-        print(f"{len(kept)} kept of {len(items)} reviewed -> {output}")
+        print(f"{len(kept)} kept, {len(dropped)} dropped of {len(items)} -> {output}")
+        # A partial review is the normal case -- skimming twenty of a hundred is the point.
+        # Reporting "kept of all" made 111 questions nobody had looked at indistinguishable
+        # from 111 somebody had rejected.
+        if undecided:
+            print(f"{undecided} were never reviewed, and are not in {output.name}")
+        return 0
+
+    if args.calibrate:
+        chosen = calibrate.sample(items, args.calibrate)
+        if not chosen:
+            raise SystemExit(f"no measured items in {source}: run pipeline/07_necessity.py first")
+        output = paths.data_dir() / "calibration.html"
+        output.write_text(calibrate.render(chosen, evidence_texts()), encoding="utf-8")
+        needs = sum(1 for i in chosen if i.necessity.needs_both)
+        print(f"{len(chosen)} questions ({needs} the pipeline calls necessary) -> {output}")
         return 0
 
     html = page.render(items, evidence_texts())

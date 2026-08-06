@@ -8,7 +8,7 @@ from osint_benchmark.generate.item import Evidence, Item, Necessity
 from osint_benchmark.necessity import ablate
 from osint_benchmark.release import freeze
 from osint_benchmark.release.load import load_items
-from osint_benchmark.review import page
+from osint_benchmark.review import calibrate, page
 
 
 def _item(item_id="c1|i1|Q1", **kw):
@@ -203,3 +203,60 @@ class TestFreeze:
         assert loaded[0].necessity.public_only is True
         assert loaded[0].gates == {"two_sided": True}
         assert [e.side for e in loaded[0].evidence] == ["private", "public"]
+
+
+class TestCalibration:
+    """Checking the pipeline's verdicts, rather than the questions."""
+
+    @staticmethod
+    def _measured(item_id, needs_both):
+        """Return a measured item that does or does not need both documents."""
+        item = _item(item_id=item_id)
+        item.necessity = Necessity(
+            closed_book=False, public_only=not needs_both, private_only=False
+        )
+        return item
+
+    def test_the_sample_is_split_between_the_two_verdicts(self):
+        """A random sample would be dominated by whichever verdict is commoner.
+
+        The interesting failure is asymmetric: a measure right about what it passes and
+        wrong about what it fails looks fine until you stratify.
+        """
+        items = [self._measured(f"n{i}", True) for i in range(20)]
+        items += [self._measured(f"o{i}", False) for i in range(20)]
+
+        chosen = calibrate.sample(items, 12)
+
+        assert len(chosen) == 12
+        assert sum(1 for i in chosen if i.necessity.needs_both) == 6
+
+    def test_a_short_stratum_is_made_up_from_the_other(self):
+        """Better a full sample skewed than a sample of four."""
+        items = [self._measured(f"n{i}", True) for i in range(2)]
+        items += [self._measured(f"o{i}", False) for i in range(20)]
+
+        assert len(calibrate.sample(items, 12)) == 12
+
+    def test_unmeasured_items_are_not_offered_for_calibration(self):
+        """There is no verdict to agree or disagree with."""
+        assert calibrate.sample([_item(item_id="x")], 12) == []
+
+    def test_the_same_sample_comes_back_on_a_rerun(self):
+        """So two people check the same questions, and a rerun is comparable."""
+        items = [self._measured(f"n{i}", i % 2 == 0) for i in range(20)]
+
+        first = [i.item_id for i in calibrate.sample(items, 8)]
+        second = [i.item_id for i in calibrate.sample(list(reversed(items)), 8)]
+
+        assert first == second
+
+    def test_the_page_states_what_the_pipeline_concluded(self):
+        """The reviewer is agreeing or disagreeing with a claim, not forming one."""
+        chosen = calibrate.sample([self._measured("a", True), self._measured("b", False)], 2)
+
+        rendered = calibrate.render(chosen, {"d0": "private", "d1": "public"})
+
+        assert "both documents are needed" in rendered
+        assert "the public record alone" in rendered
+        assert "the judge verified it" in rendered
