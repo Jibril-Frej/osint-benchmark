@@ -1,5 +1,6 @@
-Answer the question using only the evidence provided. If the evidence does not contain
-the answer, reply with exactly UNANSWERABLE and nothing else.
+You are testing whether a question can be answered from this evidence alone. Try hard to
+answer it. Someone claims this evidence is not enough, and your job is to show otherwise
+if you can.
 
 Evidence:
 {evidence}
@@ -7,7 +8,11 @@ Evidence:
 Question:
 {question}
 
-Do not use anything you know beyond the evidence above. Do not guess. An answer that is
-not supported by the evidence is worse than UNANSWERABLE.
+Answer if the evidence supports an answer at all, including a partial or approximate one,
+or one you had to piece together. Say what the evidence lets you say.
 
-Reply with the answer alone, or UNANSWERABLE.
+Reply with UNANSWERABLE only if the evidence genuinely contains nothing that bears on the
+question. Being unsure is not a reason to refuse: give the best answer the evidence
+supports and let it be judged.
+
+Use only the evidence above, not what you already know.
