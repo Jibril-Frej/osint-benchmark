@@ -58,6 +58,22 @@ export CACHE="/scratch/$USER/osint-cache"
 export OSINT_RAW="$CACHE/raw" HF_HOME="$CACHE/hf"
 export TORCH_HOME="$WORK/torch" NLTK_DATA="$WORK/nltk"
 export TRANSFORMERS_VERBOSITY=error
+# Gated repos -- Gemma, Llama, Mistral -- need a Hugging Face token, and the token must not
+# be in this repository: it is public. Read it from a file outside git, if there is one.
+#
+# HF_TOKEN rather than a login file, because these jobs point HF_HOME at node-local
+# scratch and the library looks for `token` under HF_HOME -- so whatever
+# `huggingface-cli login` wrote into $HOME would never be found. The variable is read
+# regardless of HF_HOME.
+#
+# Never echoed. A Slurm log is world-readable on a shared filesystem.
+if [ -r "$HOME/.config/hf-token" ]; then
+  HF_TOKEN="$(tr -d '[:space:]' < "$HOME/.config/hf-token")"
+  export HF_TOKEN
+  echo "hugging face token: loaded from ~/.config/hf-token"
+else
+  echo "hugging face token: none (ungated models only)"
+fi
 export NLTK_DISABLE_IMPORT_SECURITY=1
 # Both tensor-parallel workers are on this one node, so their collectives go over
 # loopback. Left to itself gloo enumerates the node's interfaces and can pick net1, which

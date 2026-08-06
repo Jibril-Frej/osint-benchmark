@@ -25,3 +25,9 @@ __pycache__/
 CLAUDE.md
 AGENTS.md
 releases/
+
+# Credentials never belong here -- this repository is public. Tokens live outside it,
+# in ~/.config/hf-token, and the cluster jobs read them from there.
+*token*
+*.secret
+.env

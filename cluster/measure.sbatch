@@ -35,6 +35,16 @@ export OSINT_RAW="$CACHE/raw" HF_HOME="$CACHE/hf"
 export PATH="$UV_INSTALL_DIR:$PATH" PYTHONUNBUFFERED=1
 export TORCH_HOME="$WORK/torch" NLTK_DATA="$WORK/nltk"
 export NLTK_DISABLE_IMPORT_SECURITY=1 TRANSFORMERS_VERBOSITY=error
+# A gated model needs a token, and it must not be in this repository -- it is public.
+# HF_TOKEN rather than a login file: HF_HOME points at node-local scratch, so anything
+# `huggingface-cli login` wrote into $HOME would never be found. Never echoed.
+if [ -r "$HOME/.config/hf-token" ]; then
+  HF_TOKEN="$(tr -d '[:space:]' < "$HOME/.config/hf-token")"
+  export HF_TOKEN
+  echo "hugging face token: loaded from ~/.config/hf-token"
+else
+  echo "hugging face token: none (ungated models only)"
+fi
 export GLOO_SOCKET_IFNAME=lo NCCL_SOCKET_IFNAME=lo VLLM_HOST_IP=127.0.0.1
 export NCCL_P2P_DISABLE=1
 
