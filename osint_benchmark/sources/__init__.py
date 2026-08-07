@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from osint_benchmark.sources import (
     cablegate,
+    dodis,
     gdelt,
     parliament,
     sanctions,
@@ -24,6 +25,7 @@ _SOURCES: dict[str, Source] = {
     source.name: source
     for source in (
         cablegate.SOURCE,
+        dodis.SOURCE,
         gdelt.SOURCE,
         parliament.SOURCE,
         sanctions.SOURCE,

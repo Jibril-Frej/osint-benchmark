@@ -22,13 +22,15 @@ from functools import partial
 
 from osint_benchmark import paths
 from osint_benchmark.artifacts import Provenance, read_jsonl, write_records
-from osint_benchmark.link import dictionary, merge, reconcile, refined, tabular
+from osint_benchmark.link import curated, dictionary, merge, reconcile, refined, tabular
 from osint_benchmark.link import settings as link_settings
 from osint_benchmark.sources import base, get_source
 
-PROSE = {"cablegate": "private", "dodis": "private", "parliament": "public"}
+PROSE = {"cablegate": "private", "parliament": "public"}
+# Catalogued by archivists: the entities come with the documents, so no linker runs.
+CURATED = {"dodis": "private"}
 TABULAR = {"sanctions": "public", "ucdp": "public", "gdelt": "public"}
-SIDES = {**PROSE, **TABULAR}
+SIDES = {**PROSE, **CURATED, **TABULAR}
 
 
 # A sentence in the shape the linker meets: a cable, upper-cased, opening on its routing
@@ -211,6 +213,17 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{name}: title match adds entities to {len(extra)} documents")
                 rows_iter = merge.merge_rows(rows_iter, extra)
                 how = f"{method}, merged with {also_method}"
+        elif name in CURATED:
+            how = "the archive's own curated entity links"
+            if use_aliases:
+                how += ", people reconciled by name with aliases"
+            rows_iter = curated.link_records(
+                records,
+                name,
+                CURATED[name],
+                universe,
+                resolve=partial(reconcile.by_label, aliases=use_aliases),
+            )
         else:
             how = "name reconciliation against the live Wikidata endpoint"
             if use_aliases:
