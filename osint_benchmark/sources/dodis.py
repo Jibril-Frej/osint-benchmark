@@ -83,6 +83,9 @@ PROJECTION = Projection(
         "person_fallback",
         "place_wikidata_id",
         "place_fallback",
+        "specimen",
+        "dossier",
+        "relationship_type",
     ),
     kept={
         "document_doc_date": "date",
@@ -90,18 +93,20 @@ PROJECTION = Projection(
         "document_lang_code": "lang",
         "document_classification": "meta.classification",
         "document_summary": "meta.summary (the regest, kept beside the OCR text)",
+        "document_has_person": "meta.persons (joined to person_fallback for the name)",
+        "document_has_place": "meta.places (joined to place for the QID)",
         "person_fallback": "meta.persons (curated by archivists, names only)",
-        "place_wikidata_id": "meta.places (curated, and already Wikidata QIDs)",
-        "<the OCR text>": "text",
+        "place_wikidata_id": "meta.places[].qid (curated, already Wikidata)",
+        "place_fallback": "meta.places[].name, for a place the archive did not resolve",
     },
     dropped={
         "specimen": "physical description of the artefact, not its content",
         "dossier": "archival grouping, not a property of the document",
         "relationship_type": "internal vocabulary for how records reference each other",
-        "person_fallback_first_name": "folded into the person's name",
     },
     note=(
-        "The text is OCR over the scans; the summary is Dodis's own regest and is kept in "
+        "text comes from the OCR'd scans rather than from this dump, which carries no "
+        "document text at all -- only the regest, which is kept in meta beside it. "
         "meta so the two can be compared. Entities are the archive's curated links, not a "
         "linker's output, so this corpus needs no entity linking."
     ),
