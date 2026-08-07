@@ -25,6 +25,11 @@ link = [
     # almost nothing from it. This one dependency is worth more than every threshold in
     # osint_benchmark/link/refined.py.
     "truecase",
+    # mGENRE's tokenizer is XLM-RoBERTa's, loaded slow because the fast one does not exist
+    # for it, and the slow one is a SentencePiece model. transformers reports the lack as
+    # an ImportError from twelve frames down rather than as a missing dependency.
+    "sentencepiece",
+    "protobuf",
 ]
 
 [dependency-groups]
