@@ -40,7 +40,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from osint_benchmark.schema import Document
-from osint_benchmark.sources.base import Projection, Source
+from osint_benchmark.sources.base import Projection, Source, SourceUnavailable
 
 VOCAB = "http://dodis.ch/schema/vocab/"
 LINE = re.compile(r"^<([^>]+)>\s+<([^>]+)>\s+(.+)\s\.\s*$")
@@ -281,23 +281,41 @@ def nt_path() -> Path:
     return Path(os.environ.get("OSINT_DODIS_NT", Path.home() / "dodis-opendata.nt"))
 
 
+def acquire(raw_dir: Path) -> list[Path]:
+    """Check the two inputs are present, and say what is missing if not.
+
+    Dodis has no fetchable origin, so it uses the contract's escape hatch rather than a
+    pin: there is no URL to record and no checksum to verify against. What this can do is
+    fail with the reason, instead of yielding an empty corpus that looks like a small one.
+
+    Raises:
+        SourceUnavailable: Naming the absent input and what it is.
+    """
+    ocr, triples = ocr_dir(), nt_path()
+    if not ocr.is_dir():
+        raise SourceUnavailable(
+            f"dodis: {ocr} is missing. It holds the OCR'd scans, one dodis-<id>.txt per "
+            "document. They cannot be fetched from here -- Dodis offers no bulk download "
+            "and defends against crawlers -- so point OSINT_DODIS_OCR at an existing copy."
+        )
+    if not triples.exists():
+        raise SourceUnavailable(
+            f"dodis: {triples} is missing. It is the open-data N-Triples export from "
+            "dodis.ch, which carries the dates and the curated entity links. Point "
+            "OSINT_DODIS_NT at it."
+        )
+    return [ocr, triples]
+
+
 def parse(raw_dir: Path):
     """Yield one record per OCR'd document that the metadata also describes.
 
     Raises:
-        SystemExit: If either input is missing, naming which one and what it is. Silently
-            yielding nothing would look like an empty corpus rather than an absent one.
+        SourceUnavailable: If either input is missing, naming which one and what it is.
+            Silently yielding nothing would look like an empty corpus rather than an
+            absent one.
     """
-    ocr, triples = ocr_dir(), nt_path()
-    if not ocr.is_dir():
-        raise SystemExit(
-            f"{ocr} is missing: Dodis needs the OCR'd scans. They are not fetchable from "
-            "this repository -- see the module docstring. Set OSINT_DODIS_OCR."
-        )
-    if not triples.exists():
-        raise SystemExit(
-            f"{triples} is missing: Dodis needs its open-data N-Triples dump. Set OSINT_DODIS_NT."
-        )
+    ocr, triples = acquire(raw_dir)
     metadata = read_metadata(triples)
     for path in sorted(ocr.glob("dodis-*.txt")):
         doc_id = path.stem.removeprefix("dodis-")
@@ -309,4 +327,6 @@ def parse(raw_dir: Path):
             yield to_document(doc_id, text, meta).to_json()
 
 
-SOURCE = Source(name="dodis", kind="private", parse=parse, projection=PROJECTION)
+SOURCE = Source(
+    name="dodis", kind="private", parse=parse, acquire=acquire, projection=PROJECTION
+)

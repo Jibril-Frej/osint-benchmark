@@ -127,7 +127,7 @@ class TestParse:
         monkeypatch.setenv("OSINT_DODIS_OCR", str(tmp_path / "nowhere"))
         monkeypatch.setenv("OSINT_DODIS_NT", str(tmp_path / "nothing.nt"))
 
-        with pytest.raises(SystemExit, match="OCR"):
+        with pytest.raises(Exception, match="OCR"):
             list(dodis.parse(tmp_path))
 
     def test_the_regest_is_kept_beside_the_text_not_instead_of_it(
