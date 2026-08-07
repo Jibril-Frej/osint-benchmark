@@ -39,6 +39,8 @@
 # Usage:
 #   sbatch --partition=<p> --qos=<q> --gpus=a100:2 cluster/generate.sbatch
 #
+#   OSINT_PRIVATE       the confidential corpus (default cablegate; dodis needs no
+#                       linker, so its run skips the GPU until drafting)
 #   OSINT_GEN_LIMIT     pairs to draft from (default 80)
 #   OSINT_LINK_STRIDE   take every Nth cable (default 12, ~21k of 251k)
 #   OSINT_PAIRS         reuse a pairs.jsonl from an earlier run and skip linking, for an
@@ -51,6 +53,9 @@
 set -euo pipefail
 
 LIMIT="${OSINT_GEN_LIMIT:-80}"
+# Which confidential corpus. cablegate is prose and needs ReFinED; dodis is
+# catalogued by archivists and needs no linker at all.
+PRIVATE="${OSINT_PRIVATE:-cablegate}"
 STRIDE="${OSINT_LINK_STRIDE:-12}"
 MODEL="${OSINT_GEN_MODEL:-Qwen/QwQ-32B}"
 # Set to serve a second model for judging, after the phraser is torn down.
@@ -98,6 +103,7 @@ export NCCL_P2P_DISABLE=1
 
 echo "node    $(hostname)"
 echo "model   $MODEL"
+echo "private $PRIVATE"
 echo "limit   $LIMIT pairs"
 echo "scratch $(df -h /scratch | tail -1 | awk '{print $4}') free"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
@@ -146,8 +152,10 @@ export OSINT_CONFIG="$WORK/repo/config/$PROFILE"
 echo "profile $PROFILE${JUDGE_MODEL:+ (judge: $JUDGE_MODEL)}"
 export OSINT_TRANSCRIPT="$WORK/model-calls.jsonl"
 
-echo "=== does the linker build? ==="
-uv run python pipeline/02_link.py --check --device cuda
+if [ "$PRIVATE" = cablegate ] && [ -z "${OSINT_PAIRS:-}" ]; then
+  echo "=== does the linker build? ==="
+  uv run python pipeline/02_link.py --check --device cuda
+fi
 
 if [ -n "${OSINT_PAIRS:-}" ]; then
   # Reuse a pair set from an earlier run. Linking 83k cables is 1.5 GPU-hours and produces
@@ -161,22 +169,27 @@ if [ -n "${OSINT_PAIRS:-}" ]; then
   wc -l < "$OSINT_DATA/pairs/pairs.jsonl" | xargs echo "pairs:"
 
   echo "=== 1/8 sources (raw cached in $OSINT_RAW) ==="
-  uv run python pipeline/01_sources.py cablegate sanctions wikipedia_index
+  uv run python pipeline/01_sources.py "$PRIVATE" sanctions wikipedia_index
 
   echo "=== 4/8 public evidence (labels for the bridge entities) ==="
   uv run python pipeline/04_public.py --index wikipedia_index
 else
   echo "=== 1/8 sources (raw cached in $OSINT_RAW) ==="
-  uv run python pipeline/01_sources.py cablegate sanctions wikipedia_index
+  uv run python pipeline/01_sources.py "$PRIVATE" sanctions wikipedia_index
 
   echo "=== 2/8 link ==="
   # The public side first: the title matcher below is scoped to the entities it names.
   uv run python pipeline/02_link.py sanctions --index wikipedia_index
-  # Both linkers, merged. They miss different entities -- measured on job 13340, the matcher
-  # found 22 bridge entities ReFinED did not and ReFinED found 15 the matcher did not -- so
-  # the union is 62 bridges against 40, for no extra model and no extra GPU time.
-  uv run python pipeline/02_link.py cablegate --index wikipedia_index --device cuda \
-    --stride "$STRIDE" --and-dictionary --restrict-to sanctions
+  if [ "$PRIVATE" = cablegate ]; then
+    # Both linkers, merged. They miss different entities -- measured on job 13340, the
+    # matcher found 22 bridge entities ReFinED did not and ReFinED found 15 the matcher did
+    # not -- so the union is 62 bridges against 40, for no extra model and no GPU time.
+    uv run python pipeline/02_link.py cablegate --index wikipedia_index --device cuda \
+      --stride "$STRIDE" --and-dictionary --restrict-to sanctions
+  else
+    # Curated links: the archive already resolved them, so there is no model to run.
+    uv run python pipeline/02_link.py "$PRIVATE" --index wikipedia_index
+  fi
 
   echo "=== 3/8 graph ==="
   uv run python pipeline/03_graph.py
