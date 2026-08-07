@@ -22,15 +22,25 @@ from functools import partial
 
 from osint_benchmark import paths
 from osint_benchmark.artifacts import Provenance, read_jsonl, write_records
-from osint_benchmark.link import curated, dictionary, merge, reconcile, refined, tabular
+from osint_benchmark.link import (
+    curated,
+    dictionary,
+    merge,
+    mgenre,
+    reconcile,
+    refined,
+    tabular,
+)
 from osint_benchmark.link import settings as link_settings
 from osint_benchmark.sources import base, get_source
 
-PROSE = {"cablegate": "private", "parliament": "public"}
+PROSE = {"cablegate": "private"}
+# German and French prose: ReFinED is English-only, so this goes through mGENRE.
+MULTILINGUAL = {"parliament": "public"}
 # Catalogued by archivists: the entities come with the documents, so no linker runs.
 CURATED = {"dodis": "private"}
 TABULAR = {"sanctions": "public", "ucdp": "public", "gdelt": "public"}
-SIDES = {**PROSE, **CURATED, **TABULAR}
+SIDES = {**PROSE, **MULTILINGUAL, **CURATED, **TABULAR}
 
 
 # A sentence in the shape the linker meets: a cable, upper-cased, opening on its routing
@@ -213,6 +223,26 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{name}: title match adds entities to {len(extra)} documents")
                 rows_iter = merge.merge_rows(rows_iter, extra)
                 how = f"{method}, merged with {also_method}"
+        elif name in MULTILINGUAL:
+            how = "WikiNeural mention detection and mGENRE, over German and French"
+            recogniser, generate, mapping = mgenre.load(device=args.device)
+            cache: dict[str, str | None] = {}
+            rows_iter = refined.link_documents(
+                records,
+                refined.per_document(
+                    partial(
+                        mgenre.link_text,
+                        ner=recogniser,
+                        generate=generate,
+                        mapping=mapping,
+                        cache=cache,
+                    )
+                ),
+                MULTILINGUAL[name],
+                universe,
+                confidence=0.0,
+                source=name,
+            )
         elif name in CURATED:
             how = "the archive's own curated entity links"
             if use_aliases:
