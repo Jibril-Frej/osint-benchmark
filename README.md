@@ -5,7 +5,8 @@ confidential, one public. Neither side suffices alone, and that property is veri
 rather than assumed.
 
 The corpora are **not redistributed here**. This repo ships the scripts that fetch them
-from their original homes and the checksums that prove you rebuilt the same thing. See
+from their original homes and the checksums that prove you rebuilt the same thing — with
+one exception, `dodis`, noted under Sources. See
 [docs/architecture.md](docs/architecture.md) for the full pipeline.
 
 ## Requirements
@@ -101,7 +102,16 @@ On Slurm, one job does the lot: clone, install, serve, run, tear down.
 sbatch --partition=<p> --qos=<q> cluster/smoke.sbatch                    # CPU, stand-in models
 sbatch --partition=<p> --qos=<q> --gpus=<type> cluster/smoke_gpu.sbatch  # a real model
 sbatch --partition=<p> --qos=<q> --gpus=a100:2 cluster/generate.sbatch   # corpora to questions
+sbatch --partition=<p> --qos=<q> --gpus=<type> cluster/parliament.sbatch # link German and French
 ```
+
+`generate.sbatch` takes `OSINT_JUDGE_MODEL` to judge with a second model, served after the
+phraser is torn down — a judge from the phraser's own family is scoring its own output, and
+two 30B models do not fit on two A100s together. `OSINT_PAIRS` reuses a saved pair set and
+skips linking, which turns a prompt experiment from five hours into two.
+
+`parliament.sbatch` asks for 200 GB of memory: mGENRE's (language, title) → QID mapping is
+3.7 GB on disk and roughly 90 GB loaded.
 
 `generate.sbatch` uses [`config/qwq/`](config/qwq/), which serves one model in all three
 roles. That makes the judge the same model as the phraser — read its verdicts as a wiring
@@ -113,15 +123,25 @@ reason. Step 6 prints where every lost pair went.
 
 ## Sources
 
-| source | leg | from |
-| --- | --- | --- |
-| `cablegate` | confidential | [Internet Archive](https://archive.org/details/wikileaks-cables-csv) |
-| `gdelt` | public | data.gdeltproject.org |
-| `parliament` | public | Curia Vista OData |
-| `sanctions` | public | sesam.search.admin.ch |
-| `ucdp` | public | ucdp.uu.se |
-| `wikipedia_index` | public | dumps.wikimedia.org |
-| `wikipedia_index_simple` | public | dumps.wikimedia.org — 44 MB against 2.85 GB, for exercising the chain |
+| source | leg | linked by | from |
+| --- | --- | --- | --- |
+| `cablegate` | confidential | ReFinED | [Internet Archive](https://archive.org/details/wikileaks-cables-csv) |
+| `dodis` | confidential | the archive's own curated links | **not fetchable — see below** |
+| `parliament` | public | WikiNeural + mGENRE (German, French) | Curia Vista OData |
+| `sanctions` | public | name reconciliation | sesam.search.admin.ch |
+| `gdelt` | public | country codes | data.gdeltproject.org |
+| `ucdp` | public | country codes | ucdp.uu.se |
+| `wikipedia_index` | — | the entity universe | dumps.wikimedia.org |
+| `wikipedia_index_simple` | — | the entity universe | dumps.wikimedia.org — 44 MB against 2.85 GB, for exercising the chain |
+
+**`dodis` cannot be rebuilt from a clone.** Dodis offers no bulk download of its scans and
+defends against crawlers, so the 4,065 PDFs were gathered by a crawler that is not in this
+repository, and OCR'd separately. Point `OSINT_DODIS_OCR` at the text and `OSINT_DODIS_NT`
+at the open-data N-Triples export; without them the source says what is missing.
+
+**`gdelt` and `ucdp` name countries**, and a country cannot anchor a question — it
+co-occurs with everything, so step 5 excludes it. They are fetched and linked but produce
+no bridges as they stand.
 
 Every URL, size and SHA-256 is in [`pins/sources.toml`](pins/sources.toml). Re-pinning a
 dump to a newer date is an edit to that file, not a code change.
