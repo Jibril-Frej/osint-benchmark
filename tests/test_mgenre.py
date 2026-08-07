@@ -55,10 +55,11 @@ class TestUsable:
         assert not mgenre.usable("##fristen", "PER", 0.99)
 
     def test_a_two_letter_fragment_is_not_a_name(self):
-        """ "Je" resolved to the Polish article for German."""
+        """A fragment like "Je" resolved to the Polish article for German."""
         assert not mgenre.usable("Je", "PER", 0.99)
 
     def test_a_low_confidence_span_is_dropped(self):
+        """The NER is surer of some spans than others."""
         assert not mgenre.usable("Ungarn", "LOC", 0.5)
 
     def test_nationality_adjectives_are_not_entities(self):
@@ -75,6 +76,7 @@ class TestChunks:
     """A long item is windowed, and the windows overlap for a reason."""
 
     def test_the_whole_text_is_covered(self):
+        """No part of an item may go unread."""
         text = "x" * 4000
         covered = set()
         for offset, window in mgenre.chunks(text, window=1500, overlap=250):
@@ -83,11 +85,13 @@ class TestChunks:
         assert covered == set(range(4000))
 
     def test_windows_overlap_so_a_boundary_mention_is_seen_whole(self):
+        """A name split across two windows is a name found in neither."""
         offsets = [offset for offset, _ in mgenre.chunks("x" * 4000, window=1500, overlap=250)]
 
         assert offsets[1] < 1500
 
     def test_an_empty_text_yields_nothing(self):
+        """Rather than one empty window."""
         assert list(mgenre.chunks("")) == []
 
 
@@ -146,7 +150,7 @@ class TestLinkText:
         assert calls == [1]
 
     def test_the_mention_carries_its_context_to_the_model(self):
-        """mGENRE reads the marked span in context; without it a name is a guess."""
+        """The model reads the marked span in context; without it a name is a guess."""
         seen = []
 
         def generate(contexts):
@@ -170,6 +174,7 @@ class TestParseGenerated:
     """mGENRE emits "Title >> lang"."""
 
     def test_a_title_and_language_are_split(self):
+        """The ordinary reply shape."""
         assert mgenre.parse_generated("Ungarn >> de") == ("Ungarn", "de")
 
     def test_a_reply_without_a_language_is_still_a_title(self):
