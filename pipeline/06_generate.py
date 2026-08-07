@@ -21,7 +21,12 @@ from collections import Counter
 from osint_benchmark import paths
 from osint_benchmark.artifacts import Provenance, read_jsonl, write_records
 from osint_benchmark.generate import emit, phrase
-from osint_benchmark.generate.evidence import entity_labels, evidence_texts, sources_for
+from osint_benchmark.generate.evidence import (
+    entity_labels,
+    evidence_texts,
+    sources_for,
+    sources_for_pairs,
+)
 from osint_benchmark.models import settings, stub, transcript
 from osint_benchmark.models.backend import ModelUnavailable, vllm
 from osint_benchmark.release.load import load_items
@@ -100,7 +105,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.limit:
             pairs = pairs[: args.limit]
         phraser = transcript.transcribed(phraser, "phraser")
-        texts, labels = evidence_texts(), entity_labels()
+        # From the pairs, not from data/links: a run reusing a saved pair set has no
+        # link files, and globbing for them loaded nothing at all -- 100 of 100 pairs
+        # reported as having no evidence, on a job that had already served the model.
+        sources = sources_for_pairs(pairs)
+        print(f"evidence from: {', '.join(sources) or 'nothing cited'}")
+        texts, labels = evidence_texts(sources), entity_labels()
         if args.draft:
             items = list(phrase.draft_items(pairs, texts, labels, phraser, outcomes=outcomes))
         else:

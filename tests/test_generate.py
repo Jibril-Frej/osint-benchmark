@@ -594,3 +594,28 @@ class TestContributions:
     def test_a_draft_claiming_neither_side_says_nothing(self):
         """Rather than an empty label pretending to be an account."""
         assert phrase.contributions({}) == ""
+
+
+class TestSourcesForPairs:
+    """Step 6 has to know which corpora to load from the pairs it was given."""
+
+    def test_the_corpora_are_read_off_the_pairs(self):
+        """Not from data/links.
+
+        A run reusing a saved pair set has no link files, so globbing for them loaded
+        nothing: 100 of 100 pairs reported as having no evidence, on a job that had
+        already served a 62 GB model.
+        """
+        from osint_benchmark.generate.evidence import sources_for_pairs
+
+        pairs = [{"private_id": "cablegate:1", "public_id": "sanctions:2", "qid": "Q1"}]
+
+        assert sources_for_pairs(pairs) == ["cablegate", "sanctions"]
+
+    def test_an_unknown_prefix_is_not_a_source(self):
+        """A reference to something no parser produces cannot be loaded."""
+        from osint_benchmark.generate.evidence import sources_for_pairs
+
+        pairs = [{"private_id": "nonesuch:1", "public_id": "sanctions:2", "qid": "Q1"}]
+
+        assert sources_for_pairs(pairs) == ["sanctions"]

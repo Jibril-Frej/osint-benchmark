@@ -73,16 +73,29 @@ def record_text(row: dict) -> str:
     return "\n".join(lines)
 
 
-def sources_for(items: Iterable) -> list[str]:
-    """Return the corpora a set of items cites, read off the items themselves.
+def sources_in(doc_ids: Iterable[str]) -> list[str]:
+    """Return the corpora named by a set of document references.
 
-    What makes steps 7 and 8 resumable from an ``accepted.jsonl`` alone. Their evidence
-    ids are namespaced, so the items declare which corpora they need and nothing has to be
-    inferred from whichever link files happen to be lying about — which is the only other
-    way to know, and is wrong the moment a run is repeated with different sources.
+    What lets every step after linking work out which corpora to load from its own input,
+    rather than from whichever link files happen to be lying about. The alternative reads
+    ``data/links/*.jsonl``, which is wrong twice over: a step resuming from a saved pairs
+    or items file has no link files at all and silently loads nothing, and a rerun with
+    different sources loads the wrong ones. Both have happened.
     """
-    named = {refs.split(evidence.doc_id)[0] for item in items for evidence in item.evidence}
+    named = {refs.split(doc_id)[0] for doc_id in doc_ids}
     return sorted(name for name in named if name in ALL)
+
+
+def sources_for(items: Iterable) -> list[str]:
+    """Return the corpora a set of items cites, read off the items themselves."""
+    return sources_in(evidence.doc_id for item in items for evidence in item.evidence)
+
+
+def sources_for_pairs(pairs: Iterable[dict]) -> list[str]:
+    """Return the corpora a set of pairs cites, read off the pairs themselves."""
+    return sources_in(
+        doc_id for pair in pairs for doc_id in (pair["private_id"], pair["public_id"])
+    )
 
 
 def evidence_texts(sources: list[str] | None = None) -> dict[str, str]:
