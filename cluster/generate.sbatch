@@ -41,6 +41,9 @@
 #
 #   OSINT_GEN_LIMIT     pairs to draft from (default 80)
 #   OSINT_LINK_STRIDE   take every Nth cable (default 12, ~21k of 251k)
+#   OSINT_PAIRS         reuse a pairs.jsonl from an earlier run and skip linking, for an
+#                       experiment that changes only a prompt. bridges.jsonl must sit
+#                       beside it.
 #   OSINT_JUDGE_MODEL   a second model to judge with, served after the phraser is
 #                       torn down. Set it and the run uses config/split; leave it
 #                       unset and one model does both roles, which is a wiring
@@ -146,26 +149,44 @@ export OSINT_TRANSCRIPT="$WORK/model-calls.jsonl"
 echo "=== does the linker build? ==="
 uv run python pipeline/02_link.py --check --device cuda
 
-echo "=== 1/8 sources (raw cached in $OSINT_RAW) ==="
-uv run python pipeline/01_sources.py cablegate sanctions wikipedia_index
+if [ -n "${OSINT_PAIRS:-}" ]; then
+  # Reuse a pair set from an earlier run. Linking 83k cables is 1.5 GPU-hours and produces
+  # the same pairs every time, so an experiment that changes only a prompt should not pay
+  # for it. What still has to be rebuilt is the corpora (the drafts quote them) and the
+  # public facts (the bridge label goes into the prompt, and only bridges.jsonl is saved).
+  echo "=== reusing pairs from $OSINT_PAIRS ==="
+  mkdir -p "$OSINT_DATA/pairs" "$OSINT_DATA/graph"
+  cp "$OSINT_PAIRS" "$OSINT_DATA/pairs/pairs.jsonl"
+  cp "$(dirname "$OSINT_PAIRS")/bridges.jsonl" "$OSINT_DATA/graph/bridges.jsonl"
+  wc -l < "$OSINT_DATA/pairs/pairs.jsonl" | xargs echo "pairs:"
 
-echo "=== 2/8 link ==="
-# The public side first: the title matcher below is scoped to the entities it names.
-uv run python pipeline/02_link.py sanctions --index wikipedia_index
-# Both linkers, merged. They miss different entities -- measured on job 13340, the matcher
-# found 22 bridge entities ReFinED did not and ReFinED found 15 the matcher did not -- so
-# the union is 62 bridges against 40, for no extra model and no extra GPU time.
-uv run python pipeline/02_link.py cablegate --index wikipedia_index --device cuda \
-  --stride "$STRIDE" --and-dictionary --restrict-to sanctions
+  echo "=== 1/8 sources (raw cached in $OSINT_RAW) ==="
+  uv run python pipeline/01_sources.py cablegate sanctions wikipedia_index
 
-echo "=== 3/8 graph ==="
-uv run python pipeline/03_graph.py
+  echo "=== 4/8 public evidence (labels for the bridge entities) ==="
+  uv run python pipeline/04_public.py --index wikipedia_index
+else
+  echo "=== 1/8 sources (raw cached in $OSINT_RAW) ==="
+  uv run python pipeline/01_sources.py cablegate sanctions wikipedia_index
 
-echo "=== 4/8 public evidence ==="
-uv run python pipeline/04_public.py --index wikipedia_index
+  echo "=== 2/8 link ==="
+  # The public side first: the title matcher below is scoped to the entities it names.
+  uv run python pipeline/02_link.py sanctions --index wikipedia_index
+  # Both linkers, merged. They miss different entities -- measured on job 13340, the matcher
+  # found 22 bridge entities ReFinED did not and ReFinED found 15 the matcher did not -- so
+  # the union is 62 bridges against 40, for no extra model and no extra GPU time.
+  uv run python pipeline/02_link.py cablegate --index wikipedia_index --device cuda \
+    --stride "$STRIDE" --and-dictionary --restrict-to sanctions
 
-echo "=== 5/8 pair ==="
-uv run python pipeline/05_pair.py
+  echo "=== 3/8 graph ==="
+  uv run python pipeline/03_graph.py
+
+  echo "=== 4/8 public evidence ==="
+  uv run python pipeline/04_public.py --index wikipedia_index
+
+  echo "=== 5/8 pair ==="
+  uv run python pipeline/05_pair.py
+fi
 keep
 
 echo "=== installing vLLM (node-local) ==="
