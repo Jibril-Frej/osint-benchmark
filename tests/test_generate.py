@@ -573,3 +573,24 @@ class TestTwoPass:
 
         assert list(phrase.verify_items(items, texts, lambda p: "UNSUPPORTED", 1, outcomes)) == []
         assert outcomes["judge_rejected"] == 1
+
+
+class TestContributions:
+    """What each document supplied, as the draft itself claimed."""
+
+    def test_both_sides_are_recorded(self):
+        """A reviewer looking at a question that did not need both wants its own account."""
+        rationale = phrase.contributions(
+            {"from_confidential": "the meeting date.", "from_public": "the listing date."}
+        )
+
+        assert "the meeting date." in rationale
+        assert "the listing date." in rationale
+
+    def test_an_older_reply_still_works(self):
+        """Drafts written before the prompt asked for the two contributions."""
+        assert phrase.contributions({"reasoning": "both are needed"}) == "both are needed"
+
+    def test_a_draft_claiming_neither_side_says_nothing(self):
+        """Rather than an empty label pretending to be an account."""
+        assert phrase.contributions({}) == ""

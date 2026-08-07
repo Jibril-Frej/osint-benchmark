@@ -58,6 +58,21 @@ def item_id(pair: dict) -> str:
     return f"{pair['private_id']}|{pair['public_id']}|{pair['qid']}"
 
 
+def contributions(drafted: dict) -> str:
+    """Return what the draft claims each document supplied.
+
+    The prompt asks for these *before* the question, so the model has to name the two
+    facts before it can lean on one of them. Kept rather than discarded because they are
+    the draft's own account of why both documents are needed, and a reviewer looking at a
+    question that turned out not to need both wants to see what it thought it was doing.
+    """
+    private = str(drafted.get("from_confidential", "")).strip()
+    public = str(drafted.get("from_public", "")).strip()
+    if not private and not public:
+        return str(drafted.get("reasoning", "")).strip()
+    return f"Confidential: {private} Public: {public}".strip()
+
+
 def draft(pair: dict, private_text: str, public_text: str, bridge: str, phraser: Complete) -> dict:
     """Ask the model for one question and its answer, as JSON.
 
@@ -166,7 +181,7 @@ def draft_items(
             question_type=question_type,
             question=str(drafted["question"]).strip(),
             answer=str(drafted["answer"]).strip(),
-            rationale=str(drafted.get("reasoning", "")).strip(),
+            rationale=contributions(drafted),
             evidence=[
                 Evidence(doc_id=pair["private_id"], source="private", side="private"),
                 Evidence(doc_id=pair["public_id"], source="public", side="public"),
