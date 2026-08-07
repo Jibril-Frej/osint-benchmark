@@ -145,11 +145,56 @@ def acquire(raw_dir: Path) -> list[Path]:
     return paths
 
 
+# The fields carrying prose, per entity set. Everything else is an id, a date, a code or
+# an OData envelope, and a linker shown those finds nothing -- which is exactly what
+# happened: 2,000 items linked to 0 entities because no record had a `text` field at all.
+TEXT_FIELDS = {
+    "Business": ("Title", "Description", "SubmittedBy"),
+    "Person": ("FirstName", "LastName", "OfficialName", "PersonNumber"),
+    "MemberCouncil": ("FirstName", "LastName", "CantonName", "PartyName", "CouncilName"),
+    "PersonInterest": ("Name", "Function", "Description"),
+    "PersonOccupation": ("Name", "Description"),
+    "Party": ("PartyName", "PartyAbbreviation"),
+}
+
+# A field whose value is longer than this is prose even if it is not in the list above.
+PROSE_CHARS = 40
+
+
+def document_text(entity: str, row: dict) -> str:
+    """Return the text of one record: the prose fields, in order, one per line.
+
+    Curia Vista is a register rather than a document store, so an item's "text" is its
+    title and description -- around a hundred characters. That is thin, and it is what the
+    API returns at this endpoint: the full submitted texts live in entity sets this source
+    does not fetch. Named entities do appear in titles, which is what makes it linkable at
+    all.
+    """
+    named = TEXT_FIELDS.get(entity, ())
+    parts = [str(row[field]).strip() for field in named if isinstance(row.get(field), str)]
+    # Anything long that the list did not anticipate: better a field too many than an
+    # entity set silently contributing nothing.
+    parts += [
+        value.strip()
+        for key, value in row.items()
+        if key not in named
+        and not key.startswith("__")
+        and isinstance(value, str)
+        and len(value) > PROSE_CHARS
+    ]
+    return "\n".join(part for part in dict.fromkeys(parts) if part)
+
+
 def parse(raw_dir: Path) -> Iterator[dict]:
     """Yield every fetched row, tagged with the entity set it came from."""
     for entity, _ in ENTITIES:
         for row in read_jsonl(raw_dir / "parliament" / f"{entity}.jsonl"):
-            yield {"doc_id": f"{entity}:{row.get('ID')}", "entity": entity, **row}
+            yield {
+                "doc_id": f"{entity}:{row.get('ID')}",
+                "entity": entity,
+                "text": document_text(entity, row),
+                **row,
+            }
 
 
 SOURCE = Source(

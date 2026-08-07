@@ -178,3 +178,50 @@ class TestParse:
             "Business:1",
         }
         assert next(r for r in records if r["entity"] == "Business")["Title"] == "x"
+
+
+class TestDocumentText:
+    """A record the linker can read, which the source did not previously produce."""
+
+    def test_the_prose_fields_become_the_text(self):
+        """2,000 items linked to 0 entities because no record had a text field at all."""
+        from osint_benchmark.sources.parliament import document_text
+
+        text = document_text(
+            "Business",
+            {"Title": "Beziehungen zu Ungarn", "Description": "Bericht", "ID": 7},
+        )
+
+        assert text == "Beziehungen zu Ungarn\nBericht"
+
+    def test_identifiers_and_dates_are_not_text(self):
+        """A linker shown a code finds nothing, slowly."""
+        from osint_benchmark.sources.parliament import document_text
+
+        row = {"ID": 7, "SubmissionDate": "2009-01-01", "Language": "DE"}
+
+        text = document_text("Business", row)
+
+        assert text == ""
+
+    def test_a_long_field_the_list_did_not_anticipate_is_kept(self):
+        """Better a field too many than an entity set silently contributing nothing."""
+        from osint_benchmark.sources.parliament import document_text
+
+        text = document_text("Business", {"ReasonText": "Der Bundesrat " + "x" * 60})
+
+        assert "Der Bundesrat" in text
+
+    def test_a_repeated_value_appears_once(self):
+        """Title and Description are sometimes the same string."""
+        from osint_benchmark.sources.parliament import document_text
+
+        text = document_text("Business", {"Title": "Ungarn", "Description": "Ungarn"})
+
+        assert text == "Ungarn"
+
+    def test_an_unknown_entity_still_yields_its_prose(self):
+        """The entity list is a hint, not an allowlist."""
+        from osint_benchmark.sources.parliament import document_text
+
+        assert "Bundesrat" in document_text("Nonesuch", {"Whatever": "Bundesrat " + "y" * 50})
