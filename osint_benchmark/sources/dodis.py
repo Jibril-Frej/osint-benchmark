@@ -327,6 +327,4 @@ def parse(raw_dir: Path):
             yield to_document(doc_id, text, meta).to_json()
 
 
-SOURCE = Source(
-    name="dodis", kind="private", parse=parse, acquire=acquire, projection=PROJECTION
-)
+SOURCE = Source(name="dodis", kind="private", parse=parse, acquire=acquire, projection=PROJECTION)
