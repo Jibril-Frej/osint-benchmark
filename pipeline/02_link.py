@@ -70,7 +70,15 @@ def main(argv: list[str] | None = None) -> int:
     """Link the requested sources; return a process exit code."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("sources", nargs="*", help=f"default: all of {', '.join(SIDES)}")
-    parser.add_argument("--limit", type=int, help="link only N documents")
+    parser.add_argument(
+        "--limit",
+        type=int,
+        help=(
+            "link only N documents, taken from the front. Use --stride instead for a "
+            "sample: the corpora are ordered, so the first N parliament records are "
+            "all people and the first N cables are all from one decade"
+        ),
+    )
     parser.add_argument(
         "--stride",
         type=int,

@@ -149,7 +149,23 @@ def acquire(raw_dir: Path) -> list[Path]:
 # an OData envelope, and a linker shown those finds nothing -- which is exactly what
 # happened: 2,000 items linked to 0 entities because no record had a `text` field at all.
 TEXT_FIELDS = {
-    "Business": ("Title", "Description", "SubmittedBy"),
+    # The prose is here, and it is substantial: the previous project's corpus averages
+    # about 5 KB per item across these fields. Title and Description alone are ~100
+    # characters, which is what made a truncated run look like a register of names.
+    "Business": (
+        "Title",
+        "Description",
+        "InitialSituation",
+        "SubmittedText",
+        "ReasonText",
+        "MotionText",
+        "FederalCouncilResponseText",
+        "FederalCouncilProposalText",
+        "DraftText",
+        "DocumentationText",
+        "Proceedings",
+        "SubmittedBy",
+    ),
     "Person": ("FirstName", "LastName", "OfficialName", "PersonNumber"),
     "MemberCouncil": ("FirstName", "LastName", "CantonName", "PartyName", "CouncilName"),
     "PersonInterest": ("Name", "Function", "Description"),
