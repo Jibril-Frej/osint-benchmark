@@ -32,6 +32,31 @@ def bridge_entities(limit: int | None = None) -> list[str]:
     return qids[:limit] if limit else qids
 
 
+def linked_entities(confidence: float = 0.0, limit: int | None = None) -> list[str]:
+    """Return every QID any linked document names, ordered and deduplicated.
+
+    Wider than the bridges, and the typed question builders need it to be. An association
+    is two people in *one* document who share a public neighbour -- neither of them has to
+    appear in a public corpus at all, so scoping the fetch to bridges would starve exactly
+    the type that does not use them.
+
+    The previous project's slice was 62,497 entities for the whole of Cablegate and Dodis,
+    which is 1,250 batched requests. This is scoped the same way: everything linked, and
+    linking already restricts to entities holding an English Wikipedia article.
+    """
+    links = paths.data_dir() / "links"
+    if not links.is_dir():
+        raise SystemExit(f"{links} is missing: run pipeline/02_link.py first")
+    seen: dict[str, None] = {}
+    for path in sorted(links.glob("*.jsonl")):
+        for row in read_jsonl(path):
+            for entity in row.get("entities", []):
+                if entity.get("confidence", 1.0) >= confidence:
+                    seen.setdefault(entity["qid"])
+    qids = list(seen)
+    return qids[:limit] if limit else qids
+
+
 def titles_for(qids: list[str], index_name: str = "wikipedia_index") -> list[tuple[str, str]]:
     """Return (QID, article title) for the entities that have an article."""
     index = paths.docs_dir() / f"{index_name}.jsonl"
@@ -44,12 +69,31 @@ def titles_for(qids: list[str], index_name: str = "wikipedia_index") -> list[tup
 def main(argv: list[str] | None = None) -> int:
     """Fetch Wikidata statements and article text for the bridge entities."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--limit", type=int, help="fetch only the first N bridge entities")
+    parser.add_argument("--limit", type=int, help="fetch only the first N entities")
+    parser.add_argument(
+        "--scope",
+        choices=("bridges", "linked"),
+        default="bridges",
+        help=(
+            "which entities to fetch facts for. 'bridges' is enough for the generic "
+            "question type; the typed builders need 'linked', because an association is "
+            "two people in one document and neither need appear in a public corpus"
+        ),
+    )
+    parser.add_argument(
+        "--min-confidence",
+        type=float,
+        default=0.0,
+        help="with --scope linked, ignore mentions the linker was less sure of than this",
+    )
     parser.add_argument("--index", default="wikipedia_index", help="which entity index to read")
     args = parser.parse_args(argv)
 
-    qids = bridge_entities(args.limit)
-    print(f"{len(qids)} bridge entities")
+    if args.scope == "linked":
+        qids = linked_entities(args.min_confidence, args.limit)
+    else:
+        qids = bridge_entities(args.limit)
+    print(f"{len(qids)} {args.scope} entities")
     failures: list[str] = []
 
     def note(key: str, exc: Exception) -> None:

@@ -170,3 +170,68 @@ class TestFetchArticles:
         list(articles.fetch_articles([(f"Q{i}", f"T{i}") for i in range(45)], fetch, 0))
 
         assert calls == [20, 20, 5]
+
+
+def _step4():
+    """Import the numbered pipeline file, whose name cannot be imported normally."""
+    import importlib.util
+
+    from osint_benchmark import paths
+
+    spec = importlib.util.spec_from_file_location("step4", paths.ROOT / "pipeline" / "04_public.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class TestLinkedEntities:
+    """The typed builders need every linked entity, not only the bridges."""
+
+    def test_every_linked_entity_is_returned(self, tmp_path, monkeypatch):
+        """An association is two people in one document; neither need be a bridge.
+
+        Scoping the fetch to bridges would starve exactly the type that does not use them.
+        """
+        import json
+
+        links = tmp_path / "links"
+        links.mkdir(parents=True)
+        (links / "cablegate.jsonl").write_text(
+            json.dumps(
+                {
+                    "doc_id": "cablegate:1",
+                    "entities": [
+                        {"qid": "Q1", "confidence": 0.99},
+                        {"qid": "Q2", "confidence": 0.5},
+                    ],
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("OSINT_DATA", str(tmp_path))
+
+        assert _step4().linked_entities() == ["Q1", "Q2"]
+
+    def test_an_unsure_mention_can_be_excluded(self, tmp_path, monkeypatch):
+        """A question built on a mislink has a false premise, so the floor is higher here."""
+        import json
+
+        links = tmp_path / "links"
+        links.mkdir(parents=True)
+        (links / "cablegate.jsonl").write_text(
+            json.dumps(
+                {
+                    "doc_id": "cablegate:1",
+                    "entities": [
+                        {"qid": "Q1", "confidence": 0.99},
+                        {"qid": "Q2", "confidence": 0.5},
+                    ],
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("OSINT_DATA", str(tmp_path))
+
+        assert _step4().linked_entities(confidence=0.9) == ["Q1"]
