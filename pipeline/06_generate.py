@@ -108,7 +108,7 @@ def typed_candidates(
     if "resolution" in wanted:
         built = list(resolution.build(rows, labels, people, sizes))
         rng.shuffle(built)
-        kept = list(typed.from_resolution(built, texts, articles, outcomes=outcomes))
+        kept = list(typed.from_resolution(built, texts, articles, labels, outcomes=outcomes))
         print(f"resolution: {len(built)} raw, {len(kept)} survive the conditions")
         candidates += kept[:per_type]
     return candidates

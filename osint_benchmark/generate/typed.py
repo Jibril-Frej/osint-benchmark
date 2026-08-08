@@ -251,10 +251,16 @@ def from_resolution(
     items: Iterable[Resolution],
     texts: dict[str, str],
     articles: dict[str, str],
+    labels: dict[str, str] | None = None,
     margin: float = resolution.MARGIN,
     outcomes: Counter | None = None,
 ) -> Iterator[Candidate]:
-    """Yield the resolutions whose gold survives the namesake check, as candidates."""
+    """Yield the resolutions whose gold survives the namesake check, as candidates.
+
+    ``labels`` is only for the reviewer: the namesakes are recorded by name as well as by
+    QID, because deciding whether the linker picked the right bearer means reading who the
+    others were, and "Q1053159, Q2432, Q60849" is not something a person can check.
+    """
     if outcomes is None:
         outcomes = Counter()
     for item in items:
@@ -288,11 +294,15 @@ def from_resolution(
             offsets=(start, end),
             facts={"surface": item.surface, "bearers": str(len(item.candidates))},
             provenance={
+                "namesakes": "; ".join(
+                    (labels or {}).get(qid, qid) for qid in item.candidates if qid != item.qid
+                ),
                 "candidate_qids": " ".join(item.candidates),
                 "prominence_rank": str(item.rank),
                 "gold_article_bytes": str(item.article_bytes),
                 "gold_score": str(verdict.gold_score),
                 "rival_score": str(verdict.rival_score),
+                "closest_rival": (labels or {}).get(verdict.rival, verdict.rival),
             },
         )
 
