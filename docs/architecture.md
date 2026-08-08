@@ -321,14 +321,40 @@ cost steps 1–5.
 scoped like a corpus — the enwiki-sitelinked universe — and is the one source built from
 a dump. Build-time lookups still go to the live endpoint.
 
-**Questions and their answers are both model-written** from the two documents, rather
-than gold being read out of the public record before a model is involved. This buys the
-property the computed path could not give: an answer that comes from combining the two
-sides, instead of a public fact the private document merely helps locate. The previous
-project's measurements show what that fixes — the two types whose gold was a register
-field were also the two most answerable from the public side alone, at 10 of 34 for
-trajectory and 6 of 10 for officer. What it costs is the free correctness check, which
-the verification pass and repeat-and-agree above are there to replace.
+**The default type has its question and its answer both model-written** from the two
+documents, rather than gold being read out of the public record before a model is
+involved. This buys the property a computed answer could not give: an answer that comes
+from combining the two sides, instead of a public fact the private document merely helps
+locate. The previous project's measurements show what that fixes — the two types whose
+gold was a register field were also the two most answerable from the public side alone,
+at 10 of 34 for trajectory and 6 of 10 for officer. What it costs is the free correctness
+check, which the verification pass and repeat-and-agree above are there to replace.
+
+**Two types compute their gold anyway**, and the distinction is worth stating because
+this reverses the decision above for them. `association` and `resolution` do not read a
+public attribute *of the private document's subject* — the failure mode that made
+trajectory and officer answerable from the public side. What they read is a **relation
+that only the join produces**: the organisation two people in one document both belong to
+(and who are, by construction, unconnected in public sources), or which bearer of an
+ambiguous family name a passage means. Neither answer can be looked up from the private
+document's subject, because neither question names a subject to look it up from — the
+phraser is required to describe the situation rather than name the people, and is never
+shown the answer.
+
+What they gain is that necessity holds by construction rather than by measurement: the
+pair is required not to be publicly linked, the ambiguity is required to be real, and the
+answer is required to be absent from the private document. What they lose is the judge —
+there is no model-written answer to check — so a computed set of conditions stands in its
+place, including a vocabulary check on the resolution gold, without which over 80% of raw
+candidates name the wrong person.
+
+The measurement they cannot support honestly is the public-only ablation. The public
+document that states an association is the two people's own Wikidata records, and those
+are exactly what you can only look up once you know who the two people are — so handing
+them to a public-only solver hands it the private document's contribution. The previous
+project ran that ablation for both types with no public evidence at all, which is a second
+closed-book run wearing a different label. This repo cites the answer entity's article
+instead and says plainly that the number measures less than it appears to.
 
 **vLLM serves the models**, not the llama.cpp server the previous project used. Each
 question costs about seven calls -- one draft, three judge samples for repeat-and-agree,
@@ -349,6 +375,13 @@ issued concurrently, so the throughput this was chosen for is not yet realised.
    backfill sends 126,903 QIDs derived from linking the cables. The previous project
    already does this against the public API, so there is precedent, but it should be a
    recorded decision rather than an oversight.
+
+   The typed builders make this larger rather than different: `04_public --scope linked
+   --neighbours` asks Wikidata about every entity any confidential document names, and then
+   about the entities those point at. A QID is not corpus text, but the *set* of them is
+   derived from the corpus, and a long enough list of who a diplomatic archive mentions is
+   itself informative. Nothing here decides that question; it is recorded so that whoever
+   does can see how much traffic it now covers.
 
 2. **Cablegate redistribution** is avoided by shipping build scripts, which settles the
    licensing question but not availability: the pinned source must be reachable years
