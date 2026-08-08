@@ -112,8 +112,11 @@ at, not just for the bridges:
 
 ```bash
 uv run python pipeline/04_public.py --scope linked --min-confidence 0.9 --neighbours
-uv run python pipeline/06_generate.py --types association,resolution --per-type 150
+uv run python pipeline/06_generate.py --types association,resolution --per-type 150 --workers 8
 ```
+
+`--workers` puts that many requests in flight; steps 6 and 7 both take it. vLLM batches
+continuously, so one request at a time leaves the GPUs mostly idle.
 
 They take no judge and no `--draft`/`--verify` pass: the answer is computed, so there is
 nothing for a model to have got wrong. The phraser is never shown it.
