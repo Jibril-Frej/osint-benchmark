@@ -169,9 +169,11 @@ defends against crawlers, so the 4,065 PDFs were gathered by a crawler that is n
 repository, and OCR'd separately. Point `OSINT_DODIS_OCR` at the text and `OSINT_DODIS_NT`
 at the open-data N-Triples export; without them the source says what is missing.
 
-**`gdelt` and `ucdp` name countries**, and a country cannot anchor a question — it
-co-occurs with everything, so step 5 excludes it. They are fetched and linked but produce
-no bridges as they stand.
+**`gdelt` and `ucdp` produce no bridges.** They name countries, and a country co-occurs
+with everything, so step 5 excludes it as a bridge anchor. That is a fact about the bridge
+type, not about the sources: the previous project built questions on both by matching a
+cable to public events sharing an anchor *and* falling within ±21 days of its date, which
+is discriminative where the entity alone is not. That type is not ported yet.
 
 Every URL, size and SHA-256 is in [`pins/sources.toml`](pins/sources.toml). Re-pinning a
 dump to a newer date is an edit to that file, not a code change.

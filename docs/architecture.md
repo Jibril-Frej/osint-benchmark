@@ -368,6 +368,23 @@ infrastructure rather than about client code.
 Note that the client is still **sequential**: batching does nothing until requests are
 issued concurrently, so the throughput this was chosen for is not yet realised.
 
+## Not ported yet
+
+**Event corroboration**, the type built on GDELT and UCDP. It pairs a private document
+describing an incident with the public event records that could bear it out, and asks
+whether they do — a four-way verdict, decided by a model in the same call that writes the
+question, so it is the one type whose gold is neither computed nor a fact about an entity.
+
+It is worth naming because the obvious reading of "gdelt and ucdp bridge nothing" is that
+they are unusable, and that is wrong. A country co-occurs with everything, so it is a poor
+*bridge* anchor — but anchor plus a ±21-day window around the document's date is specific,
+and the previous project's matcher skipped the giant countries for exactly the reason the
+bridge type excludes them. 37 questions, 24 of which needed all three conditions.
+
+The cost is the largest of anything outstanding: roughly 1,400 lines across eight scripts,
+a 6 GB event store, and a date scope of 2003-2010 where GDELT and UCDP overlap — which also
+means Dodis, ending in 1979, cannot contribute to it.
+
 ## Open decisions
 
 1. **Does the property backfill leave the workstation?** Name reconciliation sends
