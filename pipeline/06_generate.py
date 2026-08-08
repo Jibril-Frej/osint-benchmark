@@ -34,7 +34,14 @@ from collections import Counter
 
 from osint_benchmark import paths
 from osint_benchmark.artifacts import Provenance, read_jsonl, write_records
-from osint_benchmark.generate import association, emit, phrase, resolution, typed
+from osint_benchmark.generate import (
+    association,
+    chronology,
+    emit,
+    phrase,
+    resolution,
+    typed,
+)
 from osint_benchmark.generate.evidence import (
     entity_labels,
     evidence_texts,
@@ -42,11 +49,17 @@ from osint_benchmark.generate.evidence import (
     sources_for,
     sources_for_pairs,
 )
+from osint_benchmark.graph import entity_types
 from osint_benchmark.models import settings, stub, transcript
 from osint_benchmark.models.backend import ModelUnavailable, vllm
+from osint_benchmark.pair import topical
 from osint_benchmark.release.load import load_items
+from osint_benchmark.sources import base, get_source, refs
 
-TYPES = ("association", "resolution")
+TYPES = ("association", "resolution", "chronology", "posture")
+
+# The two types built on the cable-parliament join rather than on the Wikidata slice.
+JOINED = ("chronology", "posture")
 
 
 def private_links() -> list[dict]:
@@ -64,6 +77,92 @@ def private_links() -> list[dict]:
         for row in read_jsonl(path)
         if row.get("side") == "private"
     ]
+
+
+def sided(rows: list[dict], side: str) -> dict[str, list[str]]:
+    """Return ``doc_id -> the QIDs it names``, for the link rows on one side."""
+    return {
+        row["doc_id"]: [e["qid"] for e in row.get("entities", ())]
+        for row in rows
+        if row.get("side") == side
+    }
+
+
+def topical_pairs(links: list[dict], facts: list[dict], outcomes: Counter) -> list[dict]:
+    """Return the cable-parliament join the chronology and posture types rest on.
+
+    Built here rather than in step 5 because it is a *topical* join and step 5 is an entity
+    one: this needs the cables' State Department tags, the items' German subject categories
+    and a date window, none of which a bridge map carries.
+    """
+    labels = typed.labels_in(facts)
+    # Which entities are places, resolved the way step 3 does it: an entity is not an
+    # instance of "geographic location" itself, it is an instance of "city" or "canton", so
+    # the *classes* present are asked about once and every entity checked against those.
+    # Naming the ancestor directly finds almost nothing, which is a silent way to make every
+    # pair look focused.
+    place_classes = entity_types.descendants_of(entity_types.classes_in(facts), entity_types.PLACE)
+    places = {
+        row["qid"]
+        for row in facts
+        if set((row.get("statements") or {}).get("instance_of", ())) & place_classes
+    }
+    print(f"{len(places)} of {len(facts)} entities are places, from {len(place_classes)} classes")
+
+    public_qids = sided(links, "public")
+    documents = {name: {} for name in ("cablegate", "parliament")}
+    for name in documents:
+        output = base.output_path(get_source(name))
+        if output.exists():
+            for row in read_jsonl(output):
+                documents[name][refs.ref(name, row["doc_id"])] = row
+
+    cables = []
+    for row in links:
+        if row.get("side") != "private" or not row["doc_id"].startswith("cablegate:"):
+            continue
+        record = documents["cablegate"].get(row["doc_id"])
+        when = topical.parse_date(record.get("date") if record else None)
+        if not record or not when:
+            continue
+        cables.append(
+            {
+                "doc_id": row["doc_id"],
+                "date": when,
+                "origin": (record.get("meta") or {}).get("origin", ""),
+                "subject": topical.subject_of(record.get("text", "")),
+                "tags": topical.tags_in(record.get("text", "")),
+                "qids": [e["qid"] for e in row.get("entities", ())],
+            }
+        )
+
+    business = []
+    for doc_id, record in documents["parliament"].items():
+        if record.get("entity") != "Business":
+            continue
+        when = topical.parse_date(record.get("SubmissionDate"))
+        cats = {c.strip() for c in str(record.get("TagNames") or "").split("|") if c.strip()}
+        if not when or not cats:
+            continue
+        business.append(
+            {
+                "doc_id": doc_id,
+                "date": when,
+                "title": record.get("Title") or "",
+                "type": record.get("BusinessTypeName") or "",
+                "cats": cats,
+                "has_response": bool(record.get("FederalCouncilResponseText")),
+                "qids": public_qids.get(doc_id, []),
+            }
+        )
+
+    print(f"{len(cables)} dated cables, {len(business)} dated and categorised business items")
+    pairs = list(topical.join(cables, business, labels, places, outcomes=outcomes))
+    print(
+        f"topical join: {len(pairs)} pairs, {sum(p['focused'] for p in pairs)} focused "
+        f"({outcomes['no_mapped_topic']} cables had no mapped topic)"
+    )
+    return pairs
 
 
 def typed_candidates(
@@ -98,6 +197,18 @@ def typed_candidates(
 
     rng = random.Random(seed)
     candidates: list[typed.Candidate] = []
+    pairs = topical_pairs(rows, facts, outcomes) if set(wanted) & set(JOINED) else []
+    if "chronology" in wanted:
+        built = list(chronology.build(pairs))
+        rng.shuffle(built)
+        kept = list(typed.from_chronology(built, texts, outcomes))
+        print(f"chronology: {len(built)} intervals, {len(kept)} with both documents")
+        candidates += kept[:per_type]
+    if "posture" in wanted:
+        adjudicable = list(typed.from_posture(pairs, texts, outcomes))
+        rng.shuffle(adjudicable)
+        print(f"posture: {len(adjudicable)} focused pairs to adjudicate")
+        candidates += adjudicable[:per_type]
     if "association" in wanted:
         graph = association.relations(facts)
         built = list(association.build(rows, graph, people))

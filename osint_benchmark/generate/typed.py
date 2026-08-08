@@ -44,6 +44,7 @@ from dataclasses import dataclass, field
 
 from osint_benchmark.generate import passage, resolution
 from osint_benchmark.generate.association import Association
+from osint_benchmark.generate.chronology import Chronology
 from osint_benchmark.generate.item import Evidence, Item
 from osint_benchmark.generate.resolution import Resolution
 from osint_benchmark.models import prompts
@@ -81,6 +82,10 @@ class Candidate:
         offsets: Where that passage sits in the private document, so the item can cite it
             without carrying a copy of it.
         facts: What the type's prompt needs, beyond the passage.
+        verdicts: When the answer is a judgement rather than a computed value, the labels it
+            may take. The model then decides the gold in the same call that writes the
+            question, because whether a private position matches a public one cannot be
+            settled before knowing what is being asked.
         provenance: How the candidate was arrived at, for a reviewer to check.
     """
 
@@ -93,6 +98,7 @@ class Candidate:
     passage: str
     offsets: tuple[int, int] = (0, 0)
     facts: dict = field(default_factory=dict)
+    verdicts: tuple[str, ...] = ()
     provenance: dict = field(default_factory=dict)
 
 
@@ -307,32 +313,157 @@ def from_resolution(
         )
 
 
-def ask(candidate: Candidate, asker: str, openings: list[str], phraser: Complete) -> str:
-    """Return the phraser's question for one candidate, or empty if it wrote none.
+# What a posture question may be answered with. Four labels rather than two because a
+# private position and a public one can genuinely half-agree, and because "the two documents
+# are not about the same thing" is a correct answer rather than a failure to find one.
+POSTURE_VERDICTS = ("Yes", "No", "Mixed", "Not enough evidence")
 
-    The prompt is chosen by type and never carries the answer. ``openings`` is the list of
-    first words already used in this run, shown back so the run does not collapse into one
-    template — the previous project's defence against forty-one questions beginning the
-    same way.
+# How much of each document the phraser is shown. The previous project's figures: the
+# confidential side is read closely, the parliamentary side is skimmed for its position.
+PRIVATE_CHARS, PUBLIC_CHARS = 5000, 4000
+
+# A chronology question shows only the opening of the cable: the interval is the answer, and
+# the model is being asked to describe the episode, not to analyse it.
+CHRONOLOGY_CHARS = 900
+
+
+def from_chronology(
+    items: Iterable[Chronology],
+    texts: dict[str, str],
+    outcomes: Counter | None = None,
+) -> Iterator[Candidate]:
+    """Yield one candidate per interval, with the number of days as its answer.
+
+    The answer is written "N days" rather than as a bare number. A bare one-digit answer
+    fails the gate that rejects one-character answers as parse failures, and "12" is not what
+    a colleague would say back to you anyway.
     """
-    used = ", ".join(sorted(set(openings))[:OPENINGS_SHOWN]) or "none yet"
-    reply = phraser(
-        prompts.render(
-            f"phrase_{candidate.question_type}",
-            passage=candidate.passage[:PASSAGE_CHARS],
-            asker=asker,
-            used=used,
-            **candidate.facts,
+    if outcomes is None:
+        outcomes = Counter()
+    for item in items:
+        private = texts.get(item.private_id, "")
+        public = texts.get(item.public_id, "")
+        if not private or not public:
+            outcomes["no_evidence"] += 1
+            continue
+        outcomes["candidate"] += 1
+        yield Candidate(
+            item_id=f"{item.private_id}|{item.public_id}|days",
+            question_type="chronology",
+            answer=f"{item.days} days",
+            gold_qid="",
+            private_id=item.private_id,
+            public_id=item.public_id,
+            passage="",
+            facts={
+                "private_evidence": private[:CHRONOLOGY_CHARS],
+                "public_title": item.title,
+                "public_type": "parliamentary proceeding",
+            },
+            provenance={
+                "days": str(item.days),
+                "order": item.order,
+                "shared_entities": "; ".join(item.shared),
+                "private_subject": item.subject,
+                "gold": "computed from two metadata dates; no model wrote it",
+            },
         )
-    )
+
+
+def from_posture(
+    pairs: Iterable[dict],
+    texts: dict[str, str],
+    outcomes: Counter | None = None,
+) -> Iterator[Candidate]:
+    """Yield one candidate per focused pair, for the model to adjudicate.
+
+    The only type here whose gold a model decides. Whether a position taken privately matches
+    the one taken publicly cannot be settled before knowing what is being asked, so the
+    question and the verdict are written in the same call — which is why this one keeps the
+    rationale the model gives, and the computed types do not.
+    """
+    if outcomes is None:
+        outcomes = Counter()
+    for pair in pairs:
+        if not pair.get("focused"):
+            continue
+        private = texts.get(pair["private_id"], "")
+        public = texts.get(pair["public_id"], "")
+        if not private or not public:
+            outcomes["no_evidence"] += 1
+            continue
+        outcomes["candidate"] += 1
+        yield Candidate(
+            item_id=f"{pair['private_id']}|{pair['public_id']}|posture",
+            question_type="posture",
+            answer="",
+            gold_qid="",
+            private_id=pair["private_id"],
+            public_id=pair["public_id"],
+            passage="",
+            facts={
+                "private_evidence": private[:PRIVATE_CHARS],
+                "private_date": pair["private_date"],
+                "private_origin": pair.get("private_origin", ""),
+                "public_evidence": public[:PUBLIC_CHARS],
+                "public_date": pair["public_date"],
+                "public_title": pair.get("public_title", ""),
+                "public_type": pair.get("public_type", "parliamentary proceeding"),
+            },
+            verdicts=POSTURE_VERDICTS,
+            provenance={
+                "shared_entities": "; ".join(pair.get("shared_entities", ())),
+                "shared_categories": "; ".join(pair.get("shared_cats", ())),
+                "days_apart": str(pair.get("days_apart", "")),
+                "gold": "adjudicated by the model that wrote the question",
+            },
+        )
+
+
+def ask(candidate: Candidate, asker: str, openings: list[str], phraser: Complete) -> dict:
+    """Return the phraser's reply for one candidate, parsed; empty when it wrote nothing.
+
+    The prompt is chosen by type. ``openings`` is the list of first words already used in
+    this run, shown back so the run does not collapse into one template — the previous
+    project's defence against forty-one questions beginning the same way.
+
+    Which values reach the prompt is decided by the prompt itself: everything the candidate
+    can offer is assembled, then narrowed to what the file declares. That is what lets four
+    types with quite different inputs share one call, while a prompt asking for something no
+    type provides still fails loudly rather than rendering a literal brace.
+    """
+    name = f"phrase_{candidate.question_type}"
+    offered = {
+        "asker": asker,
+        "used": ", ".join(sorted(set(openings))[:OPENINGS_SHOWN]) or "none yet",
+        "passage": candidate.passage[:PASSAGE_CHARS],
+        **candidate.facts,
+    }
+    declared = prompts.placeholders(name)
+    reply = phraser(prompts.render(name, **{k: v for k, v in offered.items() if k in declared}))
     start, end = reply.find("{"), reply.rfind("}")
     if start < 0 or end <= start:
-        return ""
+        return {}
     try:
         written = json.loads(reply[start : end + 1])
     except json.JSONDecodeError:
-        return ""
-    return str(written.get("question", "")).strip() if isinstance(written, dict) else ""
+        return {}
+    return written if isinstance(written, dict) else {}
+
+
+def answer_for(candidate: Candidate, written: dict) -> str:
+    """Return the item's gold: computed for most types, adjudicated for the rest.
+
+    A type declaring ``verdicts`` is one whose answer is a judgement about two documents —
+    whether a private position matches a public one — and that cannot be settled before
+    knowing what the question is, so the model decides it in the same call. A reply naming
+    no allowed label yields nothing rather than a guess.
+    """
+    if not candidate.verdicts:
+        return candidate.answer
+    verdict = str(written.get("verdict", "")).strip()
+    match = [label for label in candidate.verdicts if label.lower() == verdict.lower()]
+    return match[0] if match else ""
 
 
 def to_item(candidate: Candidate, question: str, asker: str, model: str) -> Item:
@@ -396,8 +527,8 @@ def phrase_candidates(
         chunk = list(enumerate(ordered[start : start + CHUNK], start))
         seen = list(openings)
 
-        def one(pair: tuple[int, Candidate], used: list[str] = seen) -> str | None:
-            """Return the question for one candidate, or None if the phraser failed."""
+        def one(pair: tuple[int, Candidate], used: list[str] = seen) -> dict | None:
+            """Return the phraser's reply for one candidate, or None if it failed."""
             index, candidate = pair
             try:
                 return ask(candidate, askers[index % len(askers)], used, phraser)
@@ -411,13 +542,23 @@ def phrase_candidates(
         else:
             written = [one(pair) for pair in chunk]
 
-        for (index, candidate), question in zip(chunk, written, strict=True):
-            if question is None:
+        for (index, candidate), reply in zip(chunk, written, strict=True):
+            if reply is None:
                 outcomes["phraser_error"] += 1
                 continue
+            question = str(reply.get("question", "")).strip() if reply else ""
             if not question:
                 outcomes["unparseable_reply"] += 1
                 continue
+            answer = answer_for(candidate, reply)
+            if not answer:
+                # Only an adjudicated type reaches this: the model wrote a question and then
+                # a verdict outside the labels it was given, so there is no gold to keep.
+                outcomes["no_usable_verdict"] += 1
+                continue
             openings.append(" ".join(question.split()[:4]))
             outcomes["phrased"] += 1
-            yield to_item(candidate, question, askers[index % len(askers)], model)
+            item = to_item(candidate, question, askers[index % len(askers)], model)
+            item.answer = answer
+            item.rationale = str(reply.get("rationale", "")).strip()
+            yield item
