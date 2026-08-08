@@ -73,6 +73,8 @@ class Candidate:
         private_id: The confidential document, namespaced.
         public_id: The public record the answer is read from, namespaced.
         passage: The few hundred words around the mention, which is what the phraser sees.
+        offsets: Where that passage sits in the private document, so the item can cite it
+            without carrying a copy of it.
         facts: What the type's prompt needs, beyond the passage.
         provenance: How the candidate was arrived at, for a reviewer to check.
     """
@@ -84,6 +86,7 @@ class Candidate:
     private_id: str
     public_id: str
     passage: str
+    offsets: tuple[int, int] = (0, 0)
     facts: dict = field(default_factory=dict)
     provenance: dict = field(default_factory=dict)
 
@@ -196,6 +199,7 @@ def from_association(
             outcomes["gold_named_privately"] += 1
             continue
         outcomes["candidate"] += 1
+        start, end = passage.span(private, item.a_surface)
         yield Candidate(
             item_id=f"{item.doc_id}|{item.a}|{item.b}|{item.shared}",
             question_type="association",
@@ -203,7 +207,8 @@ def from_association(
             gold_qid=item.shared,
             private_id=item.doc_id,
             public_id=article_ref(item.shared),
-            passage=passage.window(private, item.a_surface),
+            passage=private[start:end],
+            offsets=(start, end),
             facts={"a_label": labels.get(item.a, ""), "b_label": labels.get(item.b, "")},
             provenance={
                 "a_qid": item.a,
@@ -237,7 +242,8 @@ def from_resolution(
         if not articles.get(item.qid):
             outcomes["gold_has_no_article"] += 1
             continue
-        around = passage.window(private, item.surface)
+        start, end = passage.span(private, item.surface)
+        around = private[start:end]
         verdict = resolution.check(item, around, articles, margin)
         if verdict.verdict != "verified":
             outcomes[f"gold_{verdict.verdict}"] += 1
@@ -251,6 +257,7 @@ def from_resolution(
             private_id=item.doc_id,
             public_id=article_ref(item.qid),
             passage=around,
+            offsets=(start, end),
             facts={"surface": item.surface, "bearers": str(len(item.candidates))},
             provenance={
                 "candidate_qids": " ".join(item.candidates),
@@ -300,7 +307,12 @@ def to_item(candidate: Candidate, question: str, asker: str, model: str) -> Item
         answer=candidate.answer,
         rationale="",
         evidence=[
-            Evidence(doc_id=candidate.private_id, source=source, side="private"),
+            Evidence(
+                doc_id=candidate.private_id,
+                source=source,
+                side="private",
+                offsets=candidate.offsets,
+            ),
             Evidence(doc_id=candidate.public_id, source="wikipedia", side="public"),
         ],
         provenance={

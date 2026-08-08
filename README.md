@@ -49,6 +49,7 @@ Run in order. Each step reads the previous step's output from `data/`.
 | `04_public.py` | fetch public evidence for the bridge entities | network |
 | `05_pair.py` | pair one confidential document with one public record | — |
 | `06_generate.py` | write each question and its answer | a model served with vLLM |
+| `06_generate.py --types` | build the questions whose answers are computed | a model served with vLLM |
 | `07_necessity.py` | measure whether both sides are needed | a model served with vLLM |
 | `08_review.py` | render the questions for the human pass | — |
 | `09_release.py` | freeze a version | — |
@@ -96,14 +97,40 @@ uv run python pipeline/06_generate.py --limit 20   # every question look necessa
 GPU. Set `OSINT_TRANSCRIPT=calls.jsonl` to record every prompt and reply — off by default,
 because prompts carry corpus text and replies carry gold answers.
 
+### Question types
+
+`06_generate.py` writes one type by default and two more on request.
+
+| type | the answer | how it is arrived at |
+| --- | --- | --- |
+| `bridge` | written by the model from two documents | judged against both documents, unanimous verdicts only |
+| `association` | the organisation two people in one document both belong to | computed from the Wikidata slice |
+| `resolution` | the full name of someone a document calls by family name alone | the linker's resolution, checked against the passage |
+
+The two typed builders need facts for every linked entity and for the entities those point
+at, not just for the bridges:
+
+```bash
+uv run python pipeline/04_public.py --scope linked --min-confidence 0.9 --neighbours
+uv run python pipeline/06_generate.py --types association,resolution --per-type 150
+```
+
+They take no judge and no `--draft`/`--verify` pass: the answer is computed, so there is
+nothing for a model to have got wrong. The phraser is never shown it.
+
 On Slurm, one job does the lot: clone, install, serve, run, tear down.
 
 ```bash
 sbatch --partition=<p> --qos=<q> cluster/smoke.sbatch                    # CPU, stand-in models
 sbatch --partition=<p> --qos=<q> --gpus=<type> cluster/smoke_gpu.sbatch  # a real model
 sbatch --partition=<p> --qos=<q> --gpus=a100:2 cluster/generate.sbatch   # corpora to questions
+sbatch --partition=<p> --qos=<q> --gpus=a100:2 cluster/typed.sbatch      # the typed questions
 sbatch --partition=<p> --qos=<q> --gpus=<type> cluster/parliament.sbatch # link German and French
 ```
+
+`typed.sbatch` copies each stage's output to `$HOME`. Pass `OSINT_LINKS` and `OSINT_FACTS`
+to reuse them: fetching a record and an article for every linked entity takes an hour and a
+half of network with the GPUs doing nothing, and it produces the same files every time.
 
 `generate.sbatch` takes `OSINT_JUDGE_MODEL` to judge with a second model, served after the
 phraser is torn down — a judge from the phraser's own family is scoring its own output, and

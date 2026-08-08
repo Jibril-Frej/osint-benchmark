@@ -51,17 +51,26 @@ def written_as(label: str, text: str) -> str:
     return ""
 
 
-def window(text: str, anchor: str, before: int = BEFORE, after: int = AFTER) -> str:
-    """Return the passage around a document's first mention of ``anchor``.
+def span(text: str, anchor: str, before: int = BEFORE, after: int = AFTER) -> tuple[int, int]:
+    """Return ``(start, end)`` of the passage around a document's first mention of ``anchor``.
 
+    Offsets rather than the text itself, because that is how an item cites a document: the
+    release then contains no corpus text and an item cannot drift from what it rests on.
     Falls back to the opening of the document when the anchor cannot be found, so a caller
     always has something to show; callers that require the mention to be present check for
-    it with :func:`written_as` instead of inferring it from an empty return.
+    it with :func:`written_as` instead of inferring it from the fallback.
     """
     found = text.lower().find(anchor.lower()) if anchor else -1
     if found < 0:
-        return text[: before + after]
-    return text[max(0, found - before) : found + after]
+        return 0, min(len(text), before + after)
+    start = max(0, found - before)
+    return start, min(len(text), found + after)
+
+
+def window(text: str, anchor: str, before: int = BEFORE, after: int = AFTER) -> str:
+    """Return the passage around a document's first mention of ``anchor``."""
+    start, end = span(text, anchor, before, after)
+    return text[start:end]
 
 
 def locate(row: dict, text: str) -> dict:

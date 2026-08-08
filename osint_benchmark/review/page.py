@@ -33,6 +33,7 @@ article.drop { border-left: 5px solid #c62828; }
 .q { font-size: 17px; font-weight: 600; margin-bottom: 6px; }
 .a { color: #14532d; margin-bottom: 10px; }
 .meta { font-size: 12px; color: #666; margin-bottom: 10px; }
+.prov { font-size: 12px; color: #666; margin-bottom: 10px; font-family: monospace; }
 .flag { display: inline-block; padding: 1px 7px; border-radius: 3px; margin-right: 5px;
         font-size: 11px; border: 1px solid #ccc; }
 .bad { background: #fdecea; border-color: #f5c6c2; }
@@ -79,10 +80,48 @@ def _flag(label: str, ok: bool) -> str:
     return f'<span class="flag {"good" if ok else "bad"}">{html.escape(label)}</span>'
 
 
+def _cited(evidence: list, texts: dict[str, str]) -> str:
+    """Return the text an item actually cites, which may be a span of a document.
+
+    An item that cites offsets is pointing at a passage, and showing the whole document
+    instead makes a reviewer hunt for the sentence the question was built from. The typed
+    questions all cite a span; the bridge ones cite whole documents and are unaffected.
+    """
+    parts = []
+    for cite in evidence:
+        text = texts.get(cite.doc_id, "")
+        if not text:
+            continue
+        if cite.offsets and cite.offsets[1] > cite.offsets[0]:
+            start, end = cite.offsets
+            opened = "… " if start else ""
+            closed = " …" if end < len(text) else ""
+            parts.append(f"{opened}{text[start:end]}{closed}")
+        else:
+            parts.append(text)
+    return " ".join(parts)
+
+
+def _how(item: Item) -> str:
+    """Return how the item was arrived at, for a reviewer deciding whether to believe it.
+
+    A typed question's answer is computed, so what a reviewer has to check is the
+    computation: which two people, through which predicate, or which namesakes the linker
+    was choosing between and by how much its choice won.
+    """
+    shown = {key: value for key, value in sorted(item.provenance.items()) if value}
+    if not shown:
+        return ""
+    pairs = " &middot; ".join(
+        f"{html.escape(key)}: {html.escape(str(value))}" for key, value in shown.items()
+    )
+    return f'<div class="prov">{pairs}</div>'
+
+
 def _article(item: Item, texts: dict[str, str]) -> str:
     """Return one question's block."""
-    private = " ".join(texts.get(e.doc_id, "") for e in item.private_evidence)
-    public = " ".join(texts.get(e.doc_id, "") for e in item.public_evidence)
+    private = _cited(item.private_evidence, texts)
+    public = _cited(item.public_evidence, texts)
     gates = "".join(_flag(name, ok) for name, ok in sorted(item.gates.items()))
     necessity = "".join(
         _flag(f"{name} answerable", not value)
@@ -98,6 +137,7 @@ def _article(item: Item, texts: dict[str, str]) -> str:
   <div class="q">{html.escape(item.question)}</div>
   <div class="a">Answer: {html.escape(item.answer)}</div>
   <div class="meta">{html.escape(item.question_type)} &middot; {html.escape(ids)}</div>
+  {_how(item)}
   <div>{gates}{necessity}</div>
   <div class="evidence">
     <section><h3>Confidential</h3><pre>{html.escape(private) or "(not available)"}</pre></section>
