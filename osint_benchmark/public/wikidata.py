@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable, Iterable, Iterator
 
@@ -58,13 +59,44 @@ KEEP_PROPERTIES = {
 }
 
 Fetch = Callable[[str], dict]
+BatchFetch = Callable[[list[str]], dict]
+
+API = "https://www.wikidata.org/w/api.php"
+
+# The most ids ``wbgetentities`` accepts in one request.
+BATCH = 50
 
 
 def fetch_entity(qid: str, revision: int | None = None, timeout: float = 60.0) -> dict:
-    """Return one entity's raw JSON, at a specific revision when given."""
+    """Return one entity's raw JSON, at a specific revision when given.
+
+    One entity per request, which is what makes it the way to re-read a pinned revision --
+    ``Special:EntityData/Q42.json?revision=N`` returns those exact bytes indefinitely. For
+    fetching a whole slice see :func:`fetch_batch`.
+    """
     url = f"{ENTITY_DATA}/{qid}.json"
     if revision is not None:
         url += f"?revision={revision}"
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+        return json.loads(response.read())
+
+
+def fetch_batch(qids: list[str], timeout: float = 60.0) -> dict:
+    """Return the raw JSON for up to :data:`BATCH` entities at once.
+
+    ``props=info`` is asked for because that is what carries ``lastrevid``: the pinning the
+    whole file exists to preserve survives batching, it is just requested explicitly here
+    rather than arriving with the entity.
+    """
+    params = {
+        "action": "wbgetentities",
+        "ids": "|".join(qids),
+        "props": "info|labels|descriptions|claims",
+        "languages": "en|mul",
+        "format": "json",
+    }
+    url = f"{API}?{urllib.parse.urlencode(params)}"
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
         return json.loads(response.read())
@@ -135,24 +167,64 @@ def record(qid: str, payload: dict) -> dict:
     }
 
 
+def entity_in(payload: dict, qid: str) -> dict | None:
+    """Return one entity out of a batch payload, following a redirect if there was one.
+
+    Wikidata merges entities, and asking for a merged id returns the *target* keyed under
+    its own id. Looking only under the id asked for would report a merged entity as missing,
+    which is the same silent loss the batch fallback below exists to prevent.
+    """
+    entities = payload.get("entities", {})
+    if qid in entities:
+        return entities[qid]
+    for entity in entities.values():
+        if (entity.get("redirects") or {}).get("from") == qid:
+            return entity
+    return None
+
+
 def fetch_entities(
     qids: Iterable[str],
-    fetch: Fetch = fetch_entity,
+    fetch: BatchFetch = fetch_batch,
     pause: float = 0.1,
     on_error: Callable[[str, Exception], None] | None = None,
+    one: Fetch = fetch_entity,
 ) -> Iterator[dict]:
     """Yield one record per entity, skipping and reporting the ones that fail.
+
+    Fetched fifty at a time. ``Special:EntityData`` serves one entity per request, which is
+    the right shape for re-reading a pinned revision and the wrong one for a slice: the
+    previous project's was 62,497 entities, and one request each would be a working day of
+    waiting rather than the twenty minutes 1,250 batched requests take.
 
     A failed fetch is *unknown data*, not absent data. It is reported through ``on_error``
     rather than yielded as an empty record, because a run that silently turns failures into
     empty statement sets is how a third of an entity set goes missing without a symptom.
+    Batching makes that worse in one specific way — a single bad id would cost the other
+    forty-nine — so a batch that fails is retried one entity at a time before anything in it
+    is given up on.
     """
-    for qid in dict.fromkeys(qids):
+    order = list(dict.fromkeys(qids))
+    for start in range(0, len(order), BATCH):
+        chunk = order[start : start + BATCH]
         try:
-            yield record(qid, fetch(qid))
-        except (urllib.error.URLError, OSError, ValueError, KeyError) as exc:
-            if on_error is not None:
-                on_error(qid, exc)
+            payload = fetch(chunk)
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            for qid in chunk:
+                try:
+                    yield record(qid, one(qid))
+                except (urllib.error.URLError, OSError, ValueError, KeyError):
+                    if on_error is not None:
+                        on_error(qid, exc)
+                if pause:
+                    time.sleep(pause)
             continue
+        for qid in chunk:
+            entity = entity_in(payload, qid)
+            if entity is None:
+                if on_error is not None:
+                    on_error(qid, KeyError(f"{qid} absent from the batch that asked for it"))
+                continue
+            yield record(qid, {"entities": {qid: entity}})
         if pause:
             time.sleep(pause)

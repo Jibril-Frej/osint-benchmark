@@ -89,33 +89,98 @@ class TestStatements:
 class TestFetchEntities:
     """A failed fetch is unknown data, not absent data."""
 
+    def _batch(self, revid=1):
+        """Return a batch fetcher answering for every id it is asked about."""
+
+        def fetch(qids):
+            return {"entities": {qid: {"id": qid, "lastrevid": revid} for qid in qids}}
+
+        return fetch
+
     def test_the_revision_read_is_recorded(self):
         """A gold answer from a live source is only correct against one revision."""
-        record = next(wikidata.fetch_entities(["Q42"], lambda q: _entity(revid=99), pause=0))
+        record = next(wikidata.fetch_entities(["Q42"], self._batch(revid=99), pause=0))
 
         assert record["revision"] == 99
+
+    def test_the_entities_are_asked_for_fifty_at_a_time(self):
+        """One request each would turn twenty minutes into a working day of waiting."""
+        sizes = []
+
+        def fetch(qids):
+            sizes.append(len(qids))
+            return {"entities": {qid: {"id": qid} for qid in qids}}
+
+        list(wikidata.fetch_entities([f"Q{i}" for i in range(120)], fetch, pause=0))
+
+        assert sizes == [50, 50, 20]
+
+    def test_a_failed_batch_is_retried_one_entity_at_a_time(self):
+        """A single bad id must not cost the forty-nine good ones beside it."""
+        asked = []
+
+        def fetch(qids):
+            raise urllib.error.URLError("down")
+
+        def one(qid):
+            asked.append(qid)
+            if qid == "Q2":
+                raise urllib.error.URLError("still down")
+            return _entity(qid)
+
+        records = list(wikidata.fetch_entities(["Q1", "Q2"], fetch, pause=0, one=one))
+
+        assert asked == ["Q1", "Q2"]
+        assert [r["qid"] for r in records] == ["Q1"]
 
     def test_a_failure_is_reported_not_yielded_as_empty(self):
         """Silently turning failures into empty records is how a third of a set vanished."""
         seen = []
 
-        def fetch(qid):
+        def fetch(qids):
+            raise urllib.error.URLError("down")
+
+        def one(qid):
             raise urllib.error.URLError("down")
 
         records = list(
-            wikidata.fetch_entities(["Q1"], fetch, pause=0, on_error=lambda q, e: seen.append(q))
+            wikidata.fetch_entities(
+                ["Q1"], fetch, pause=0, on_error=lambda q, e: seen.append(q), one=one
+            )
         )
 
         assert records == []
         assert seen == ["Q1"]
 
+    def test_an_entity_absent_from_its_own_batch_is_reported(self):
+        """Absent from a batch that asked for it is a loss, not an empty record."""
+        seen = []
+
+        list(
+            wikidata.fetch_entities(
+                ["Q1"], lambda qids: {"entities": {}}, pause=0, on_error=lambda q, e: seen.append(q)
+            )
+        )
+
+        assert seen == ["Q1"]
+
+    def test_a_merged_entity_is_followed_to_the_id_it_became(self):
+        """Wikidata merges entities; asking for the old id returns the new one."""
+
+        def fetch(qids):
+            return {"entities": {"Q9": {"id": "Q9", "redirects": {"from": "Q1", "to": "Q9"}}}}
+
+        records = list(wikidata.fetch_entities(["Q1"], fetch, pause=0))
+
+        assert [r["qid"] for r in records] == ["Q1"]
+
     def test_repeated_qids_are_fetched_once(self):
         """A bridge list can name the same entity from several documents."""
         calls = []
 
-        def fetch(qid):
-            calls.append(qid)
-            return _entity(qid)
+        def fetch(qids):
+            calls.extend(qids)
+            return {"entities": {qid: {"id": qid} for qid in qids}}
 
         list(wikidata.fetch_entities(["Q42", "Q42"], fetch, pause=0))
 
