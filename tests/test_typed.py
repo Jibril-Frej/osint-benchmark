@@ -303,3 +303,120 @@ class TestRelationalPredicates:
     def test_employer_is_among_them(self):
         """The previous project named it and never fetched it, so it could not fire."""
         assert "employer" in association.RELATIONAL
+
+
+def _step6():
+    """Import the numbered pipeline file, whose name cannot be imported normally."""
+    import importlib.util
+
+    from osint_benchmark import paths
+
+    spec = importlib.util.spec_from_file_location(
+        "step6", paths.ROOT / "pipeline" / "06_generate.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _corpus(tmp_path, documents, links, facts, articles):
+    """Write the four files the typed path reads, and point the package at them."""
+    import json
+
+    for name, rows in (
+        ("docs/cablegate.jsonl", documents),
+        ("links/cablegate.jsonl", links),
+        ("facts/wikidata.jsonl", facts),
+        ("facts/articles.jsonl", articles),
+    ):
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows), encoding="utf-8"
+        )
+
+
+class TestTypedPipeline:
+    """The step that assembles both types, end to end on a two-document corpus."""
+
+    def _build(self, tmp_path, monkeypatch):
+        """Run the candidate builder over a corpus with one association in it."""
+        _corpus(
+            tmp_path,
+            documents=[
+                {
+                    "doc_id": "1",
+                    "text": (
+                        "MEIER AND WEBER AGREED THE WORDING OVER LUNCH AND SAID THE "
+                        "DELEGATION WOULD NOT REOPEN THE TARIFF QUESTION."
+                    ),
+                }
+            ],
+            links=[
+                {
+                    "doc_id": "cablegate:1",
+                    "side": "private",
+                    "entities": [
+                        {"qid": "Q1", "surface_form": "Anna Meier", "confidence": 0.99},
+                        {"qid": "Q2", "surface_form": "Beat Weber", "confidence": 0.99},
+                    ],
+                }
+            ],
+            facts=[
+                {
+                    "qid": "Q1",
+                    "label": "Anna Meier",
+                    "statements": {"instance_of": ["Q5"], "member_of": ["Q7"]},
+                },
+                {
+                    "qid": "Q2",
+                    "label": "Beat Weber",
+                    "statements": {"instance_of": ["Q5"], "member_of": ["Q7"]},
+                },
+                {
+                    "qid": "Q7",
+                    "label": "Helvetic Society",
+                    "statements": {"instance_of": ["Q43229"]},
+                },
+            ],
+            articles=[
+                {
+                    "doc_id": "enwiki:Q1",
+                    "qid": "Q1",
+                    "text": "A trade negotiator.",
+                    "article_bytes": 3000,
+                },
+                {
+                    "doc_id": "enwiki:Q2",
+                    "qid": "Q2",
+                    "text": "A federal administrator.",
+                    "article_bytes": 3100,
+                },
+                {
+                    "doc_id": "enwiki:Q7",
+                    "qid": "Q7",
+                    "text": "A learned society founded in Schinznach.",
+                    "article_bytes": 5000,
+                },
+            ],
+        )
+        monkeypatch.setenv("OSINT_DATA", str(tmp_path))
+        from collections import Counter
+
+        outcomes = Counter()
+        return _step6().typed_candidates(("association", "resolution"), 10, 0, outcomes), outcomes
+
+    def test_an_association_is_built_from_the_links_and_the_slice(self, tmp_path, monkeypatch):
+        """The whole chain: link file, Wikidata slice, articles, document text."""
+        candidates, _ = self._build(tmp_path, monkeypatch)
+
+        assert [c.question_type for c in candidates] == ["association"]
+        assert candidates[0].answer == "Helvetic Society"
+        assert candidates[0].private_id == "cablegate:1"
+
+    def test_the_mention_is_taken_as_the_document_writes_it(self, tmp_path, monkeypatch):
+        """The cables are upper case; a question should quote what the document said."""
+        candidates, outcomes = self._build(tmp_path, monkeypatch)
+
+        assert "MEIER" in candidates[0].passage
+        assert outcomes["mentions_located"] == 2

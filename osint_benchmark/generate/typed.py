@@ -57,6 +57,9 @@ PASSAGE_CHARS = 1400
 # forty times. Only this many, because the list is prompt text and grows with the run.
 OPENINGS_SHOWN = 12
 
+# Wikidata's class for a human being.
+HUMAN = "Q5"
+
 
 @dataclass(frozen=True)
 class Candidate:
@@ -88,6 +91,62 @@ class Candidate:
 def article_ref(qid: str) -> str:
     """Return the namespaced reference to an entity's Wikipedia article."""
     return f"enwiki:{qid}"
+
+
+def people_in(facts: Iterable[dict]) -> set[str]:
+    """Return the QIDs of the entities Wikidata calls human.
+
+    Both types are about people: an organisation pair shares a trade body by coincidence
+    rather than affiliation, and only a person is referred to by family name alone.
+    """
+    return {
+        record["qid"]
+        for record in facts
+        if HUMAN in (record.get("statements") or {}).get("instance_of", ())
+    }
+
+
+def labels_in(facts: Iterable[dict]) -> dict[str, str]:
+    """Return ``QID -> label`` for the entities that have one."""
+    return {record["qid"]: record["label"] for record in facts if record.get("label")}
+
+
+def articles_in(rows: Iterable[dict]) -> tuple[dict[str, str], dict[str, int]]:
+    """Return ``QID -> lead text`` and ``QID -> whole-article size in bytes``."""
+    text: dict[str, str] = {}
+    size: dict[str, int] = {}
+    for row in rows:
+        qid = row.get("qid")
+        if not qid:
+            continue
+        text[qid] = row.get("text", "")
+        size[qid] = int(row.get("article_bytes") or 0)
+    return text, size
+
+
+def as_written(rows: Iterable[dict], texts: dict[str, str], outcomes: Counter) -> list[dict]:
+    """Return the link rows with every mention rewritten to the document's own spelling.
+
+    Applied to every private corpus rather than only the catalogued ones. Dodis records
+    *which* entities a document concerns and not how it writes them, so without this its
+    surfaces are the archivists' index form — "Petitpierre, Max" — which is never a bare
+    family name and never appears in the text. But the check is worth running everywhere:
+    it is the difference between a question about what a document says and a question about
+    what a catalogue says it is about, and the cables are upper-case, so the form a question
+    should quote is the one the document used.
+    """
+    out = []
+    for row in rows:
+        text = texts.get(row["doc_id"], "")
+        if not text:
+            outcomes["no_document_text"] += 1
+            continue
+        located = passage.locate(row, text)
+        outcomes["mentions_located"] += len(located["entities"])
+        outcomes["mentions_not_in_text"] += len(row.get("entities", [])) - len(located["entities"])
+        if located["entities"]:
+            out.append(located)
+    return out
 
 
 def names(text: str, label: str) -> bool:

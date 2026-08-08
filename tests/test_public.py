@@ -235,3 +235,31 @@ class TestLinkedEntities:
         monkeypatch.setenv("OSINT_DATA", str(tmp_path))
 
         assert _step4().linked_entities(confidence=0.9) == ["Q1"]
+
+
+class TestNeighbours:
+    """The second hop the association type cannot work without."""
+
+    def test_the_entities_pointed_at_are_returned(self):
+        """The organisation two people share may itself appear in no document."""
+        records = [
+            {"qid": "Q1", "statements": {"member_of": ["Q7"], "instance_of": ["Q5"]}},
+            {"qid": "Q2", "statements": {"member_of": ["Q7"], "employer": ["Q8"]}},
+        ]
+
+        assert _step4().neighbours_of(records, frozenset({"member_of", "employer"})) == ["Q7", "Q8"]
+
+    def test_an_entity_already_fetched_is_not_fetched_twice(self):
+        """The first hop covers it, and a second request for it is wasted."""
+        records = [
+            {"qid": "Q1", "statements": {"member_of": ["Q2"]}},
+            {"qid": "Q2", "statements": {}},
+        ]
+
+        assert _step4().neighbours_of(records, frozenset({"member_of"})) == []
+
+    def test_a_taxonomic_predicate_is_not_followed(self):
+        """Fetching "human" for every person is 60,000 requests for one entity."""
+        records = [{"qid": "Q1", "statements": {"instance_of": ["Q5"]}}]
+
+        assert _step4().neighbours_of(records, frozenset({"member_of"})) == []
