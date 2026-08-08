@@ -166,9 +166,43 @@ class TestEntityTypes:
         """Wikidata models many states as organisations too; they are still countries."""
         assert entity_types.classify({"instance_of": ["Q43229", "Q3624078"]}) == "blocked"
 
-    def test_an_unclassifiable_entity_is_excluded_by_default(self):
+    def test_a_category_is_not_a_thing_two_documents_can_share(self):
+        """A generic noun resolves to a real entity, and co-occurs with everything.
+
+        Each resolves to a Wikidata entity that is an instance of an organisation class,
+        so a check on instance_of alone called them bridgeable -- and they co-occur with
+        everything exactly as countries do. 896 of GDELT's actor names are these. What
+        separates them from Associated Press is that other things are kinds of them.
+        """
+        police = {"instance_of": ["Q43229"], "subclass_of": ["Q1639780"]}
+
+        assert entity_types.classify(police) == "blocked"
+
+    def test_a_named_organisation_still_bridges(self):
+        """The filter must not take the specific things with the generic ones."""
+        associated_press = {"instance_of": ["Q43229", "Q192283"], "subclass_of": []}
+
+        assert entity_types.classify(associated_press) == "bridgeable"
+
+    def test_subclass_of_is_not_evidence_of_being_the_class(self):
+        """It was read as such: the two properties were unioned before being checked.
+
+        Under that reading "subclass of organisation" made something an organisation,
+        which is how every generic noun became a bridge anchor.
+        """
+        assert entity_types.classify({"subclass_of": ["Q5"]}) == "blocked"
+
+    def test_an_organisation_type_nobody_listed_still_bridges(self):
+        """Associated Press is a news agency, a cooperative and a nonprofit.
+
+        None of the three were in the allowlist, so a real named agency came out unknown
+        and was dropped. An allowlist cannot anticipate the tail of organisation types.
+        """
+        assert entity_types.classify({"instance_of": ["Q192283", "Q163740"]}) == "bridgeable"
+
+    def test_an_entity_with_no_type_at_all_is_excluded_by_default(self):
         """An entity nobody can vouch for is how the country problem returns by another route."""
-        facts = [{"qid": "Q1", "statements": {"instance_of": ["Q999999"]}}]
+        facts = [{"qid": "Q1", "statements": {}}]
 
         assert entity_types.bridgeable_qids(facts) == set()
         assert entity_types.bridgeable_qids(facts, keep_unknown=True) == {"Q1"}

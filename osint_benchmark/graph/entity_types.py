@@ -18,8 +18,10 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-# Classes that may anchor a bridge. Specific enough that two documents naming the same one
-# are plausibly about the same matter.
+# Classes that plainly may anchor a bridge. No longer a gate -- an allowlist cannot
+# anticipate the tail of organisation types, and excluding what it failed to list dropped
+# real named entities. Kept as documentation of what this filter is for, and read by
+# nothing that decides.
 BRIDGEABLE = {
     "Q5": "human",
     "Q43229": "organization",
@@ -67,16 +69,37 @@ NOT_BRIDGEABLE = {
 def classify(statements: dict[str, list[str]]) -> str:
     """Return ``bridgeable``, ``blocked`` or ``unknown`` for one entity's statements.
 
-    Blocked wins over bridgeable. An entity that is both a country and an organisation --
-    which many states are, in Wikidata's modelling -- is still a country for our purposes,
-    and still co-occurs with everything.
+    Three tests, in order, and the first is the one that was missing.
+
+    **A class is not a thing.** "Police", "School", "Company", "Student" and "Bank" all
+    resolve to Wikidata entities that are instances of an organisation class, so a check on
+    ``instance_of`` alone calls them bridgeable — and they co-occur with everything exactly
+    as countries do. What separates them from Associated Press or Vladimir Putin is that
+    they are *categories*: they have ``subclass_of`` statements, because other things are
+    kinds of them. Named individuals subclass nothing.
+
+    The previous version made this worse by *unioning* the two properties, so "subclass of
+    organisation" counted as evidence of being an organisation. That reading turns every
+    generic noun in GDELT's actor vocabulary — 896 of them — into a bridge anchor.
+
+    Then geography, which is blocked however it is classified: an entity that is both a
+    country and an organisation, as many states are in Wikidata's modelling, is still a
+    country for our purposes.
     """
-    classes = set(statements.get("instance_of", ())) | set(statements.get("subclass_of", ()))
-    if classes & set(NOT_BRIDGEABLE):
+    kinds = set(statements.get("instance_of", ()))
+    if statements.get("subclass_of"):
         return "blocked"
-    if classes & set(BRIDGEABLE):
-        return "bridgeable"
-    return "unknown"
+    if kinds & set(NOT_BRIDGEABLE):
+        return "blocked"
+    if not kinds:
+        return "unknown"
+    # Anything else that is a specific thing. BRIDGEABLE was an allowlist and is now only
+    # a description, because an allowlist cannot anticipate the tail: Associated Press is
+    # an instance of news agency, cooperative and nonprofit organisation, none of which
+    # were in it, so a real named agency came out unknown and was dropped. That is the
+    # same failure the linker's coarse-type allowlist had, and the same fix -- name what
+    # may not bridge, and let the rest through.
+    return "bridgeable"
 
 
 def bridgeable_qids(facts: Iterable[dict], keep_unknown: bool = False) -> set[str]:
