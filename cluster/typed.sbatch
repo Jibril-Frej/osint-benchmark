@@ -28,10 +28,12 @@
 #   OSINT_LINK_STRIDE   take every Nth cable (default 3, ~84k of 251k)
 #   OSINT_LINKS         a directory holding cablegate.jsonl and dodis.jsonl from an earlier
 #                       run; skips the linking stage entirely
-#   OSINT_FACTS         a directory holding wikidata.jsonl and articles.jsonl; skips the
-#                       fetching stage. Only valid with the link files it was fetched for --
-#                       a wider link set needs a wider slice, and a narrower one silently
-#                       carries entities no document names.
+#   OSINT_FACTS         a directory holding wikidata.jsonl and articles.jsonl. On a model
+#                       run it skips the fetching stage; with OSINT_STOP_AFTER=facts it is
+#                       instead the partial slice to carry on from, so a fetch that ran out
+#                       of time can be finished rather than repeated. Only valid with the
+#                       link files it was fetched for -- a wider link set needs a wider
+#                       slice, and a narrower one carries entities no document names.
 #   OSINT_PER_TYPE      candidates of each type to phrase (default 150)
 #   OSINT_TYPES         which types to build (default association,resolution)
 #   OSINT_GEN_MODEL     the phraser (default Qwen/QwQ-32B)
@@ -148,14 +150,17 @@ if [ -n "$FACTS" ]; then
   cp "$FACTS/wikidata.jsonl" "$FACTS/articles.jsonl" "$OSINT_DATA/facts/"
   cp "$FACTS"/*.provenance.json "$OSINT_DATA/facts/" 2>/dev/null || true
   echo "reused the slice in $FACTS"
-else
+fi
+if [ -z "$FACTS" ] || [ "$STOP_AFTER" = facts ]; then
   # --scope linked, not bridges: an association is two people in ONE document and neither
   # need appear in a public corpus, so scoping to bridges would starve the type entirely.
   # --neighbours adds the second hop, which is where the answers live.
   # Four in flight. Measured against the live APIs: 1.45x on the slice and 1.6x on the
   # article leads, both limited by the far end rather than the round trip.
+  # --resume so a job that runs out of time in the middle of three hours of network keeps
+  # what it fetched: rerun it with OSINT_FACTS pointing at its own output.
   uv run python pipeline/04_public.py --index wikipedia_index \
-    --scope linked --min-confidence 0.9 --neighbours --workers 4
+    --scope linked --min-confidence 0.9 --neighbours --workers 4 --resume
 fi
 wc -l "$OSINT_DATA"/facts/*.jsonl
 keep

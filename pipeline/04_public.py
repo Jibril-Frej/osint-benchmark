@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from itertools import chain
 
 from osint_benchmark import paths
 from osint_benchmark.artifacts import Provenance, read_jsonl, write_records
@@ -78,6 +79,20 @@ def neighbours_of(records: list[dict], predicates: frozenset[str]) -> list[str]:
     return list(out)
 
 
+def already(name: str) -> tuple[list[dict], set[str]]:
+    """Return the records a previous run of this step left, and which entities they cover.
+
+    Fetching the slice for a full-scale link set is hours of network. A job that runs out of
+    time after two of them should not start again from nothing, and the records are already
+    on disk in the shape they will be rewritten in.
+    """
+    path = paths.data_dir() / "facts" / name
+    if not path.exists():
+        return [], set()
+    rows = list(read_jsonl(path))
+    return rows, {row["qid"] for row in rows if row.get("qid")}
+
+
 def titles_for(qids: list[str], index_name: str = "wikipedia_index") -> list[tuple[str, str]]:
     """Return (QID, article title) for the entities that have an article."""
     index = paths.docs_dir() / f"{index_name}.jsonl"
@@ -118,6 +133,15 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--resume",
+        action="store_true",
+        help=(
+            "keep what an earlier run of this step already fetched and ask only for the "
+            "rest. The slice for a full link set is hours of network, and a job that runs "
+            "out of time should not start again from nothing"
+        ),
+    )
+    parser.add_argument(
         "--workers",
         type=int,
         default=1,
@@ -139,12 +163,16 @@ def main(argv: list[str] | None = None) -> int:
     def note(key: str, exc: Exception) -> None:
         failures.append(f"{key}: {exc}")
 
+    kept, have = already("wikidata.jsonl") if args.resume else ([], set())
+    if kept:
+        print(f"resuming: {len(kept)} entities already fetched")
     # Held rather than streamed to disk: the second hop is chosen from what the first one
     # said, so the records have to be read before any of them can be written. The previous
     # project's whole slice was 24 MB.
-    records = list(wikidata.fetch_entities(qids, on_error=note, workers=args.workers))
+    wanted = [qid for qid in qids if qid not in have]
+    records = kept + list(wikidata.fetch_entities(wanted, on_error=note, workers=args.workers))
     if args.neighbours:
-        extra = neighbours_of(records, association.RELATIONAL)
+        extra = [qid for qid in neighbours_of(records, association.RELATIONAL) if qid not in have]
         print(f"{len(extra)} entities reachable through a relational predicate")
         records += list(wikidata.fetch_entities(extra, on_error=note, workers=args.workers))
         qids += extra
@@ -172,11 +200,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(f"wikidata: {written} of {len(qids)} entities -> {facts}")
 
-    pairs = titles_for(qids, args.index)
+    have_text, have_articles = already("articles.jsonl") if args.resume else ([], set())
+    if have_text:
+        print(f"resuming: {len(have_text)} articles already fetched")
+    pairs = [pair for pair in titles_for(qids, args.index) if pair[0] not in have_articles]
     text = paths.data_dir() / "facts" / "articles.jsonl"
     written = write_records(
         text,
-        articles.fetch_articles(pairs, on_error=note, workers=args.workers),
+        chain(have_text, articles.fetch_articles(pairs, on_error=note, workers=args.workers)),
         Provenance(
             source="en.wikipedia.org action API (prop=extracts|revisions|info, exintro)",
             source_fields=("title", "pageid", "extract", "revisions", "length", "missing"),
@@ -196,7 +227,7 @@ def main(argv: list[str] | None = None) -> int:
         ),
         rows_in=len(pairs),
     )
-    print(f"articles: {written} of {len(pairs)} entities -> {text}")
+    print(f"articles: {written} written, {len(pairs)} newly fetched -> {text}")
 
     for failure in failures[:10]:
         print(f"  failed {failure}", file=sys.stderr)

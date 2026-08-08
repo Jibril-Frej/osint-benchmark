@@ -328,3 +328,30 @@ class TestNeighbours:
         records = [{"qid": "Q1", "statements": {"instance_of": ["Q5"]}}]
 
         assert _step4().neighbours_of(records, frozenset({"member_of"})) == []
+
+
+class TestResume:
+    """A fetch that ran out of time should not start again from nothing."""
+
+    def test_only_the_missing_entities_are_asked_for(self, tmp_path, monkeypatch):
+        """The slice for a full link set is hours of network."""
+        import json
+
+        facts = tmp_path / "facts"
+        facts.mkdir(parents=True)
+        (facts / "wikidata.jsonl").write_text(
+            json.dumps({"doc_id": "Q1", "qid": "Q1", "label": "One", "statements": {}}) + "\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("OSINT_DATA", str(tmp_path))
+
+        kept, have = _step4().already("wikidata.jsonl")
+
+        assert have == {"Q1"}
+        assert kept[0]["label"] == "One"
+
+    def test_nothing_fetched_yet_is_not_an_error(self, tmp_path, monkeypatch):
+        """The first run has no file to resume from."""
+        monkeypatch.setenv("OSINT_DATA", str(tmp_path))
+
+        assert _step4().already("wikidata.jsonl") == ([], set())
