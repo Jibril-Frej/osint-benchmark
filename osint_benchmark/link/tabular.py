@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator
 
+from osint_benchmark.link import search
 from osint_benchmark.link.reconcile import by_label
 from osint_benchmark.sources import refs
 
@@ -56,6 +57,39 @@ def names_in(record: dict, fields: Iterable[str], min_words: int = 1) -> list[st
         elif isinstance(value, str) and value.strip():
             found.append(value.strip())
     return [name for name in found if len(name.split()) >= min_words]
+
+
+def link_by_search(
+    records: Iterable[dict],
+    source: str,
+    side: str,
+    entity_set: frozenset[str] | set[str],
+    resolve: Callable[..., str | None] = search.resolve,
+) -> Iterator[dict]:
+    """Yield one link row per record, resolving each target through Wikidata's search.
+
+    Per record rather than in one batch, because the verification is per target: every
+    name variant of *this* listing is tried together, and its birth year and kind decide.
+    That is what lifts the sanctions list from 383 resolved targets to a measured 1,232 in
+    the previous project, and the public leg is the ceiling on the whole benchmark.
+    """
+    fields = NAME_FIELDS.get(source, ("name",))
+    for row in records:
+        names = names_in(row, fields, min_words=1)
+        qid = (
+            resolve(names, kind=str(row.get("type") or ""), years=row.get("dobs") or ())
+            if names
+            else None
+        )
+        entities = []
+        if qid and qid in entity_set:
+            entities.append({"qid": qid, "surface_form": names[0], "confidence": 1.0})
+        yield {
+            "doc_id": refs.ref(source, row["doc_id"]),
+            "source": source,
+            "side": side,
+            "entities": entities,
+        }
 
 
 def link_records(

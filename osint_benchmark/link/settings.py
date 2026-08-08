@@ -66,16 +66,21 @@ def refined(config_file: Path | None = None) -> RefinedSettings:
     )
 
 
-def reconcile(config_file: Path | None = None) -> bool:
-    """Return whether name reconciliation may match aliases as well as article titles.
+def reconcile(config_file: Path | None = None) -> tuple[bool, str]:
+    """Return ``(match aliases, method)`` for name reconciliation.
 
     Raises:
-        KeyError: If the setting is missing.
+        KeyError: If a setting is missing.
+        ValueError: If the method is not one this project implements.
     """
     section = _table("reconcile", config_file)
-    if "aliases" not in section:
-        raise KeyError("[reconcile] in link.toml is missing: aliases")
-    return bool(section["aliases"])
+    missing = {"aliases", "method"} - set(section)
+    if missing:
+        raise KeyError(f"[reconcile] in link.toml is missing: {', '.join(sorted(missing))}")
+    method = str(section["method"])
+    if method not in {"exact", "search"}:
+        raise ValueError(f"[reconcile] method must be exact or search, not {method!r}")
+    return bool(section["aliases"]), method
 
 
 def dictionary(config_file: Path | None = None) -> tuple[int, int]:

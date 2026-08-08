@@ -17,3 +17,9 @@ min_title_chars = 6
 
 [reconcile]
 aliases = true
+# How candidates are found. "exact" asks whether the name appears verbatim as a label or
+# alias; "search" asks Wikidata's own ranked search and then verifies each candidate on
+# name, entity kind and birth year. The previous project resolved 1,232 of the sanctions
+# list's 8,604 targets by searching, against 383 here by exact match -- and the public leg
+# is the ceiling on how many bridges can exist.
+method = "search"

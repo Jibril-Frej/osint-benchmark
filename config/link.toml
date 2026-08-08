@@ -32,6 +32,12 @@ max_chars = 4000
 # A sanctions list spells people the way a legal instrument does, and Wikidata files those
 # spellings as aliases. A title match still beats an alias match outright.
 aliases = true
+# How candidates are found. "exact" asks whether the name appears verbatim as a label or
+# alias; "search" asks Wikidata's own ranked search and then verifies each candidate on
+# name, entity kind and birth year. The previous project resolved 1,232 of the sanctions
+# list's 8,604 targets by searching, against 383 here by exact match -- and the public leg
+# is the ceiling on how many bridges can exist.
+method = "search"
 
 [dictionary]
 # The no-model fallback (`--dictionary`). Both floors exist because Wikipedia has articles
