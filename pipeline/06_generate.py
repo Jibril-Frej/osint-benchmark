@@ -63,6 +63,20 @@ TYPES = ("association", "resolution", "chronology", "posture", "event")
 JOINED = ("chronology", "posture")
 
 
+def all_links() -> list[dict]:
+    """Return every link row, both sides.
+
+    The topical join needs both: the confidential side supplies the entities, the public side
+    is what they have to be shared with. Handing it only the private rows leaves every public
+    item with no entities, and the join then reports that nothing shares anything -- which is
+    what it did, over 713,682 combinations that had already matched on topic and date.
+    """
+    links = paths.data_dir() / "links"
+    if not links.is_dir():
+        raise SystemExit(f"{links} is missing: run pipeline/02_link.py first")
+    return [row for path in sorted(links.glob("*.jsonl")) for row in read_jsonl(path)]
+
+
 def links_for(sources: tuple[str, ...]) -> list[dict]:
     """Return the link rows of the named sources, if they were linked at all."""
     links = paths.data_dir() / "links"
@@ -80,15 +94,7 @@ def private_links() -> list[dict]:
     Read off the rows' own ``side`` rather than from a list of corpus names, so a corpus
     added later needs nothing changed here.
     """
-    links = paths.data_dir() / "links"
-    if not links.is_dir():
-        raise SystemExit(f"{links} is missing: run pipeline/02_link.py first")
-    return [
-        row
-        for path in sorted(links.glob("*.jsonl"))
-        for row in read_jsonl(path)
-        if row.get("side") == "private"
-    ]
+    return [row for row in all_links() if row.get("side") == "private"]
 
 
 def sided(rows: list[dict], side: str) -> dict[str, list[str]]:
@@ -100,7 +106,12 @@ def sided(rows: list[dict], side: str) -> dict[str, list[str]]:
     }
 
 
-def topical_pairs(links: list[dict], facts: list[dict], outcomes: Counter) -> list[dict]:
+def topical_pairs(
+    links: list[dict],
+    facts: list[dict],
+    outcomes: Counter,
+    max_share: float = topical.MAX_ENTITY_SHARE,
+) -> list[dict]:
     """Return the cable-parliament join the chronology and posture types rest on.
 
     Built here rather than in step 5 because it is a *topical* join and step 5 is an entity
@@ -169,7 +180,9 @@ def topical_pairs(links: list[dict], facts: list[dict], outcomes: Counter) -> li
         )
 
     print(f"{len(cables)} dated cables, {len(business)} dated and categorised business items")
-    pairs = list(topical.join(cables, business, labels, places, outcomes=outcomes))
+    pairs = list(
+        topical.join(cables, business, labels, places, max_share=max_share, outcomes=outcomes)
+    )
     print(
         f"topical join: {len(pairs)} pairs, {sum(p['focused'] for p in pairs)} focused "
         f"({outcomes['no_mapped_topic']} cables had no mapped topic)"
@@ -244,7 +257,7 @@ def typed_candidates(
 
     rng = random.Random(seed)
     candidates: list[typed.Candidate] = []
-    pairs = topical_pairs(rows, facts, outcomes) if set(wanted) & set(JOINED) else []
+    pairs = topical_pairs(all_links(), facts, outcomes) if set(wanted) & set(JOINED) else []
     if "chronology" in wanted:
         built = list(chronology.build(pairs))
         rng.shuffle(built)

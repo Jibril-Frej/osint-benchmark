@@ -342,3 +342,94 @@ class TestEvents:
 
         assert [e.doc_id for e in item.public_evidence] == ["ucdp:9", "ucdp:10"]
         assert item.two_sided
+
+
+def _step6():
+    """Import the numbered pipeline file, whose name cannot be imported normally."""
+    import importlib.util
+
+    from osint_benchmark import paths
+
+    spec = importlib.util.spec_from_file_location(
+        "step6", paths.ROOT / "pipeline" / "06_generate.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class TestTopicalPipeline:
+    """The step that assembles the join, over a two-document corpus.
+
+    Written after the join reported nothing over 713,682 combinations that had already
+    matched on topic and date: it had been handed only the confidential link rows, so every
+    public item came through with no entities and could share none.
+    """
+
+    def _corpus(self, tmp_path, monkeypatch):
+        """Write the docs and links a cable-parliament join reads."""
+        import json
+
+        files = {
+            "docs/cablegate.jsonl": [
+                {
+                    "doc_id": "1",
+                    "date": "2005-03-01",
+                    "text": "SUBJECT: AVIATION\nTAGS: ETRD, PREL\n1. Swissair was discussed.",
+                    "meta": {"origin": "Embassy Bern"},
+                }
+            ],
+            "docs/parliament.jsonl": [
+                {
+                    "doc_id": "Business:9",
+                    "entity": "Business",
+                    "SubmissionDate": "2005-04-01",
+                    "Title": "Swissair und die Folgen",
+                    "TagNames": "Wirtschaft",
+                    "BusinessTypeName": "Motion",
+                }
+            ],
+            "links/cablegate.jsonl": [
+                {
+                    "doc_id": "cablegate:1",
+                    "side": "private",
+                    "entities": [{"qid": "Q2", "surface_form": "Swissair", "confidence": 0.99}],
+                }
+            ],
+            "links/parliament.jsonl": [
+                {
+                    "doc_id": "parliament:Business:9",
+                    "side": "public",
+                    "entities": [{"qid": "Q2", "surface_form": "Swissair", "confidence": 1.0}],
+                }
+            ],
+        }
+        for name, rows in files.items():
+            path = tmp_path / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8"
+            )
+        monkeypatch.setenv("OSINT_DATA", str(tmp_path))
+
+    def test_the_join_sees_both_sides(self, tmp_path, monkeypatch):
+        """A public item reaching the join with no entities can never share one."""
+        from collections import Counter
+
+        self._corpus(tmp_path, monkeypatch)
+        step6 = _step6()
+        facts = [{"qid": "Q2", "label": "Swissair", "statements": {"instance_of": ["Q46970"]}}]
+
+        # max_share is 1.0 because the corpus is one cable: an entity in 100% of a
+        # one-document corpus is generic by the rule, correctly and unhelpfully.
+        pairs = step6.topical_pairs(step6.all_links(), facts, Counter(), max_share=1.0)
+
+        assert len(pairs) == 1
+        assert pairs[0]["shared_entities"] == ["Swissair"]
+        assert pairs[0]["focused"]
+
+    def test_private_links_are_still_only_the_private_ones(self, tmp_path, monkeypatch):
+        """The other readers of the link files must not start seeing public rows."""
+        self._corpus(tmp_path, monkeypatch)
+
+        assert [r["doc_id"] for r in _step6().private_links()] == ["cablegate:1"]
