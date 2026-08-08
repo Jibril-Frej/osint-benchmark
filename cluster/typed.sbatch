@@ -39,6 +39,11 @@
 #   OSINT_GEN_MODEL     the phraser (default Qwen/QwQ-32B)
 #   OSINT_WORKERS       requests in flight at once (default 8). The server batches
 #                       continuously; one at a time leaves both GPUs mostly idle.
+#   OSINT_STUB          set to 1 to run the model stages against the scripted stand-in and
+#                       skip vLLM entirely. Submit this WITHOUT --gpus: what it answers is
+#                       how many candidates the corpora yield and where the rest were lost,
+#                       which is what decides the stride for a real run, and no part of that
+#                       needs a model. The questions it writes are placeholders.
 #   OSINT_STOP_AFTER    stop once a stage is done: "link" or "facts". This is how the run
 #                       avoids holding two A100s through three hours of network: submit
 #                       with --gpus for the linking, then with no GPU at all for the
@@ -50,6 +55,7 @@ PER_TYPE="${OSINT_PER_TYPE:-150}"
 TYPES="${OSINT_TYPES:-association,resolution}"
 MODEL="${OSINT_GEN_MODEL:-Qwen/QwQ-32B}"
 WORKERS="${OSINT_WORKERS:-8}"
+STUB="${OSINT_STUB:-}"
 STOP_AFTER="${OSINT_STOP_AFTER:-}"
 LINKS="${OSINT_LINKS:-}"
 FACTS="${OSINT_FACTS:-}"
@@ -83,6 +89,7 @@ echo "types   $TYPES, $PER_TYPE candidates each, $WORKERS requests in flight"
 echo "links   ${LINKS:-none supplied, cablegate will be relinked at stride $STRIDE}"
 echo "facts   ${FACTS:-none supplied, the whole slice will be fetched}"
 echo "stop     ${STOP_AFTER:-nothing, the whole chain runs}"
+echo "models   ${STUB:+STUB -- no model is served, the questions are placeholders}${STUB:-$MODEL served with vLLM}"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
 mkdir -p "$UV_INSTALL_DIR" "$NLTK_DATA" "$OUT" "$OSINT_RAW" "$HF_HOME" \
          "$OSINT_DATA/links" "$OSINT_DATA/facts"
@@ -175,6 +182,21 @@ fi
 wc -l "$OSINT_DATA"/facts/*.jsonl
 keep
 if [ "$STOP_AFTER" = facts ]; then echo "stopping after the facts stage; results in $OUT"; exit 0; fi
+
+if [ -n "$STUB" ]; then
+  echo "=== 4/6 phrase with the scripted stand-in (no model, no GPU) ==="
+  uv run python pipeline/06_generate.py --types "$TYPES" --per-type "$PER_TYPE" --stub
+  keep
+  echo "=== 5/6 necessity with the stand-in ==="
+  uv run python pipeline/07_necessity.py --stub
+  keep
+  echo "=== 6/6 review page ==="
+  uv run python pipeline/08_review.py
+  keep
+  ls -la "$OUT"
+  echo "done (STUB: the questions are placeholders; the counts above are real)"
+  exit 0
+fi
 
 echo "=== installing vLLM (node-local) ==="
 uv venv "$WORK/vllm-venv" >/dev/null
