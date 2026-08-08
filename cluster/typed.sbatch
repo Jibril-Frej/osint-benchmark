@@ -133,6 +133,10 @@ if [ -n "$LINKS" ]; then
     cp "$LINKS/$source.jsonl.provenance.json" "$OSINT_DATA/links/" 2>/dev/null || true
   done
   echo "reused the link files in $LINKS"
+  # The slice is only valid for the link set it was fetched against, and --resume decides
+  # what to fetch by comparing the two. A mismatch is silent otherwise.
+  echo "link files: $(wc -l < "$OSINT_DATA/links/cablegate.jsonl") cables, \
+$(wc -l < "$OSINT_DATA/links/dodis.jsonl") dodis documents"
 else
   uv run python pipeline/02_link.py --check --device cuda
   uv run python pipeline/02_link.py cablegate --index wikipedia_index --device cuda \
@@ -147,9 +151,15 @@ if [ "$STOP_AFTER" = link ]; then echo "stopping after the link stage; results i
 
 echo "=== 3/6 facts: every linked entity, and what they point at ==="
 if [ -n "$FACTS" ]; then
-  cp "$FACTS/wikidata.jsonl" "$FACTS/articles.jsonl" "$OSINT_DATA/facts/"
+  # Each file separately and none of them required: a fetch that ran out of time during the
+  # article stage left a wikidata.jsonl and no articles.jsonl, and that is exactly the case
+  # this branch exists to carry on from. Insisting on both would fail the job that needs it.
+  for name in wikidata.jsonl articles.jsonl; do
+    cp "$FACTS/$name" "$OSINT_DATA/facts/$name" 2>/dev/null \
+      && echo "reusing $FACTS/$name ($(wc -l < "$FACTS/$name") records)" \
+      || echo "no $name in $FACTS"
+  done
   cp "$FACTS"/*.provenance.json "$OSINT_DATA/facts/" 2>/dev/null || true
-  echo "reused the slice in $FACTS"
 fi
 if [ -z "$FACTS" ] || [ "$STOP_AFTER" = facts ]; then
   # --scope linked, not bridges: an association is two people in ONE document and neither
