@@ -35,8 +35,7 @@
 #                       link files it was fetched for -- a wider link set needs a wider
 #                       slice, and a narrower one carries entities no document names.
 #   OSINT_PER_TYPE      candidates of each type to phrase (default 150)
-#   OSINT_TYPES         which types to build (default association,resolution,
-#                       chronology,posture)
+#   OSINT_TYPES         which types to build (default: all five)
 #   OSINT_GEN_MODEL     the phraser (default Qwen/QwQ-32B)
 #   OSINT_WORKERS       requests in flight at once (default 8). The server batches
 #                       continuously; one at a time leaves both GPUs mostly idle.
@@ -53,7 +52,7 @@ set -euo pipefail
 
 STRIDE="${OSINT_LINK_STRIDE:-3}"
 PER_TYPE="${OSINT_PER_TYPE:-150}"
-TYPES="${OSINT_TYPES:-association,resolution,chronology,posture}"
+TYPES="${OSINT_TYPES:-association,resolution,chronology,posture,event}"
 MODEL="${OSINT_GEN_MODEL:-Qwen/QwQ-32B}"
 WORKERS="${OSINT_WORKERS:-8}"
 STUB="${OSINT_STUB:-}"
@@ -135,7 +134,7 @@ echo "=== 1/6 sources ==="
 # parliament as well as the two confidential corpora: the chronology and posture types are
 # built on the join between a cable and a parliamentary business item, so both sides have to
 # be parsed, not merely linked.
-uv run python pipeline/01_sources.py cablegate dodis parliament wikipedia_index
+uv run python pipeline/01_sources.py cablegate dodis parliament ucdp wikipedia_index
 
 echo "=== 2/6 link ==="
 if [ -n "$LINKS" ]; then
@@ -157,6 +156,9 @@ else
   # Catalogued by archivists: the entities come with the documents, so no model runs. The
   # names still have to be reconciled against Wikidata, which is network-bound, not GPU.
   uv run python pipeline/02_link.py dodis --index wikipedia_index
+  # Tabular and country-keyed, so this is a lookup rather than a linker. It bridges nothing,
+  # and the event type does not need it to: it matches on an anchor and a date window.
+  uv run python pipeline/02_link.py ucdp --index wikipedia_index
 fi
 wc -l "$OSINT_DATA"/links/*.jsonl
 keep

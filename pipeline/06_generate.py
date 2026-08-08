@@ -190,8 +190,13 @@ def dated_events(links: list[dict], sources: tuple[str, ...] = ("ucdp", "gdelt")
     }
     out = []
     for name in sources:
-        source = get_source(name)
-        output = base.output_path(source)
+        # A corpus with no linked records is skipped without being opened. GDELT is 6.7 GB
+        # of gzip and 91.6M events; reading it to discover that none of them are linked is
+        # the kind of thing that makes a step look hung.
+        if not any(doc_id.startswith(f"{name}:") for doc_id in qids):
+            print(f"{name}: no linked records, not read")
+            continue
+        output = base.output_path(get_source(name))
         if not output.exists():
             continue
         kept = 0
