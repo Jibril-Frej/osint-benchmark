@@ -515,3 +515,35 @@ class TestWithholding:
         )
 
         assert candidate.provenance["withheld"] == "Anna Meier; Beat Weber"
+
+
+class TestRoundTrip:
+    """What the review page reads has to be what the generator wrote."""
+
+    def test_the_cited_passage_survives_being_written_and_read(self, tmp_path):
+        """The page shows the passage an item cites, which only works if offsets survive."""
+        from osint_benchmark.artifacts import Provenance, write_records
+        from osint_benchmark.release.load import load_items
+
+        candidate = typed.Candidate(
+            item_id="cablegate:1|Haraszti|Q2",
+            question_type="resolution",
+            answer="Emil Haraszti",
+            gold_qid="Q2",
+            private_id="cablegate:1",
+            public_id="enwiki:Q2",
+            passage="Haraszti raised press intimidation.",
+            offsets=(400, 1100),
+        )
+        item = typed.to_item(candidate, "Who raised it?", "a desk officer", "stub")
+        path = tmp_path / "accepted.jsonl"
+        write_records(
+            path,
+            [item.to_json()],
+            Provenance(source="test", source_fields=("a",), kept={"a": "a"}, kind="derived"),
+        )
+
+        loaded = load_items(path)[0]
+
+        assert loaded.private_evidence[0].offsets == (400, 1100)
+        assert loaded.provenance["gold"].startswith("computed")
