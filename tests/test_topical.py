@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from osint_benchmark.generate import chronology, typed
+from osint_benchmark.generate import chronology, events, typed
 from osint_benchmark.pair import topical
 
 LABELS = {"Q1": "Switzerland", "Q2": "Swissair", "Q3": "Iran", "Q4": "Micheline Calmy-Rey"}
@@ -254,3 +254,91 @@ class TestPosture:
         items = list(typed.phrase_candidates([candidate], phraser, ("an analyst",)))
 
         assert items[0].answer == "31 days"
+
+
+class TestEvents:
+    """The type built on the two sources that bridge nothing."""
+
+    def _document(self, when=date(2006, 4, 5), qids=("Q1",)):
+        """Return one dated, linked confidential document."""
+        return {
+            "doc_id": "cablegate:1",
+            "date": when,
+            "entities": [{"qid": q} for q in qids],
+        }
+
+    def _event(self, doc_id="ucdp:9", when=date(2006, 4, 7), qids=("Q1",)):
+        """Return one dated, linked public event record."""
+        return {
+            "doc_id": doc_id,
+            "date": when,
+            "qids": list(qids),
+            "country": "Palestine",
+            "side_a": "Hamas",
+            "side_b": "Fatah",
+            "best": "6",
+            "date_start": when.isoformat(),
+        }
+
+    def test_an_event_in_the_window_is_matched(self):
+        """Two days apart, same anchor: the comparison the type exists for."""
+        found = list(
+            events.build([self._document()], [self._event()], {"Q1": "Palestine"}, max_share=1.0)
+        )
+
+        assert len(found) == 1
+        assert found[0].public_ids == ("ucdp:9",)
+        assert "Hamas" in found[0].rendered
+
+    def test_an_event_outside_the_window_is_not(self):
+        """Time is what makes the match discriminative; without it the anchor is a country."""
+        far = self._event(when=date(2006, 7, 7))
+
+        assert (
+            list(events.build([self._document()], [far], {"Q1": "Palestine"}, max_share=1.0)) == []
+        )
+
+    def test_an_anchor_named_by_most_documents_is_skipped(self):
+        """It puts every document beside every event of the month."""
+        documents = [{**self._document(), "doc_id": f"cablegate:{n}"} for n in range(10)]
+
+        assert (
+            list(events.build(documents, [self._event()], {"Q1": "Palestine"}, max_share=0.15))
+            == []
+        )
+
+    def test_an_undated_document_cannot_be_matched(self):
+        """The window is the whole signal, so a document without a date has none."""
+        undated = {**self._document(), "date": None}
+
+        assert (
+            list(events.build([undated], [self._event()], {"Q1": "Palestine"}, max_share=1.0)) == []
+        )
+
+    def test_the_events_shown_are_capped(self):
+        """Past a handful the prompt is a list rather than a comparison."""
+        many = [self._event(doc_id=f"ucdp:{n}", when=date(2006, 4, 6)) for n in range(20)]
+
+        found = list(
+            events.build([self._document()], many, {"Q1": "Palestine"}, max_share=1.0, max_events=8)
+        )
+
+        assert len(found[0].public_ids) == 8
+
+    def test_every_matched_event_is_cited_as_evidence(self):
+        """The absence of a matching event among the ones there are is the evidence for No."""
+        found = list(
+            events.build(
+                [self._document()],
+                [self._event(), self._event(doc_id="ucdp:10")],
+                {"Q1": "Palestine"},
+                max_share=1.0,
+            )
+        )
+        texts = {"cablegate:1": "clashes were reported"}
+
+        candidate = next(iter(typed.from_events(found, texts)))
+        item = typed.to_item(candidate, "Did clashes occur?", "an analyst", "stub")
+
+        assert [e.doc_id for e in item.public_evidence] == ["ucdp:9", "ucdp:10"]
+        assert item.two_sided

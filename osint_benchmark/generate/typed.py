@@ -45,6 +45,7 @@ from dataclasses import dataclass, field
 from osint_benchmark.generate import passage, resolution
 from osint_benchmark.generate.association import Association
 from osint_benchmark.generate.chronology import Chronology
+from osint_benchmark.generate.events import Match
 from osint_benchmark.generate.item import Evidence, Item
 from osint_benchmark.generate.resolution import Resolution
 from osint_benchmark.models import prompts
@@ -78,6 +79,8 @@ class Candidate:
         gold_qid: The entity the answer names.
         private_id: The confidential document, namespaced.
         public_id: The public record the answer is read from, namespaced.
+        public_ids: When the answer rests on several public records rather than one -- a
+            comparison against every event in a window, not a lookup in one article.
         passage: The few hundred words around the mention, which is what the phraser sees.
         offsets: Where that passage sits in the private document, so the item can cite it
             without carrying a copy of it.
@@ -96,6 +99,7 @@ class Candidate:
     private_id: str
     public_id: str
     passage: str
+    public_ids: tuple[str, ...] = ()
     offsets: tuple[int, int] = (0, 0)
     facts: dict = field(default_factory=dict)
     verdicts: tuple[str, ...] = ()
@@ -420,6 +424,51 @@ def from_posture(
         )
 
 
+def from_events(
+    matches: Iterable[Match],
+    texts: dict[str, str],
+    outcomes: Counter | None = None,
+) -> Iterator[Candidate]:
+    """Yield one candidate per matched document, for the model to adjudicate.
+
+    The public side is several records rather than one, because the question is whether *the
+    record* bears the incident out and a single row cannot answer that -- the absence of a
+    matching event among the ones there are is itself the evidence for "No".
+    """
+    if outcomes is None:
+        outcomes = Counter()
+    for match in matches:
+        private = texts.get(match.private_id, "")
+        if not private or not match.rendered:
+            outcomes["no_evidence"] += 1
+            continue
+        outcomes["candidate"] += 1
+        yield Candidate(
+            item_id=f"{match.private_id}|{match.anchor_qid}|event",
+            question_type="event",
+            answer="",
+            gold_qid=match.anchor_qid,
+            private_id=match.private_id,
+            public_id=match.public_ids[0],
+            public_ids=match.public_ids,
+            passage="",
+            facts={
+                "private_evidence": private[:PRIVATE_CHARS],
+                "anchor": match.anchor_label,
+                "events": match.rendered,
+                "window": str(match.window),
+            },
+            verdicts=POSTURE_VERDICTS,
+            provenance={
+                "anchor": match.anchor_label,
+                "anchor_qid": match.anchor_qid,
+                "events_shown": str(len(match.public_ids)),
+                "window_days": str(match.window),
+                "gold": "adjudicated by the model that wrote the question",
+            },
+        )
+
+
 def ask(candidate: Candidate, asker: str, openings: list[str], phraser: Complete) -> dict:
     """Return the phraser's reply for one candidate, parsed; empty when it wrote nothing.
 
@@ -482,7 +531,10 @@ def to_item(candidate: Candidate, question: str, asker: str, model: str) -> Item
                 side="private",
                 offsets=candidate.offsets,
             ),
-            Evidence(doc_id=candidate.public_id, source="wikipedia", side="public"),
+            *(
+                Evidence(doc_id=doc_id, source=refs.split(doc_id)[0], side="public")
+                for doc_id in (candidate.public_ids or (candidate.public_id,))
+            ),
         ],
         provenance={
             **candidate.provenance,

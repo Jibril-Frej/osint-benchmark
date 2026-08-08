@@ -38,6 +38,7 @@ from osint_benchmark.generate import (
     association,
     chronology,
     emit,
+    events,
     phrase,
     resolution,
     typed,
@@ -56,10 +57,21 @@ from osint_benchmark.pair import topical
 from osint_benchmark.release.load import load_items
 from osint_benchmark.sources import base, get_source, refs
 
-TYPES = ("association", "resolution", "chronology", "posture")
+TYPES = ("association", "resolution", "chronology", "posture", "event")
 
 # The two types built on the cable-parliament join rather than on the Wikidata slice.
 JOINED = ("chronology", "posture")
+
+
+def links_for(sources: tuple[str, ...]) -> list[dict]:
+    """Return the link rows of the named sources, if they were linked at all."""
+    links = paths.data_dir() / "links"
+    return [
+        row
+        for name in sources
+        if (links / f"{name}.jsonl").exists()
+        for row in read_jsonl(links / f"{name}.jsonl")
+    ]
 
 
 def private_links() -> list[dict]:
@@ -165,6 +177,36 @@ def topical_pairs(links: list[dict], facts: list[dict], outcomes: Counter) -> li
     return pairs
 
 
+def dated_events(links: list[dict], sources: tuple[str, ...] = ("ucdp", "gdelt")) -> list[dict]:
+    """Return the public event records that carry both a date and a linked entity.
+
+    Read from the corpora rather than from a bridge map, because an event is matched on when
+    and where it happened rather than on being named twice.
+    """
+    qids = {
+        row["doc_id"]: [e["qid"] for e in row.get("entities", ())]
+        for row in links
+        if row.get("entities")
+    }
+    out = []
+    for name in sources:
+        source = get_source(name)
+        output = base.output_path(source)
+        if not output.exists():
+            continue
+        kept = 0
+        for row in read_jsonl(output):
+            doc_id = refs.ref(name, row["doc_id"])
+            linked = qids.get(doc_id)
+            when = topical.parse_date(refs.record_date(name, row))
+            if not linked or not when:
+                continue
+            kept += 1
+            out.append({**row, "doc_id": doc_id, "date": when, "qids": linked})
+        print(f"{name}: {kept} dated and linked event records")
+    return out
+
+
 def typed_candidates(
     wanted: tuple[str, ...],
     per_type: int,
@@ -203,6 +245,23 @@ def typed_candidates(
         rng.shuffle(built)
         kept = list(typed.from_chronology(built, texts, outcomes))
         print(f"chronology: {len(built)} intervals, {len(kept)} with both documents")
+        candidates += kept[:per_type]
+    if "event" in wanted:
+        dated = [
+            {**row, "date": topical.parse_date(refs.record_date(refs.split(row["doc_id"])[0], row))}
+            for row in rows
+        ]
+        matches = list(
+            events.build(
+                [row for row in dated if row["date"]],
+                dated_events(links_for(("ucdp", "gdelt"))),
+                labels,
+                outcomes=outcomes,
+            )
+        )
+        rng.shuffle(matches)
+        kept = list(typed.from_events(matches, texts, outcomes))
+        print(f"event: {len(matches)} matched anchors, {len(kept)} with evidence")
         candidates += kept[:per_type]
     if "posture" in wanted:
         adjudicable = list(typed.from_posture(pairs, texts, outcomes))
