@@ -16,6 +16,10 @@ Each gate exists because something got through without it:
   field makes the private document a lookup key rather than evidence.
 * **answer_is_substantive** — a one-character or empty answer is a parsing failure wearing
   an answer's clothes.
+* **withholds_what_it_was_told_to** — some questions are only necessary because they
+  describe their subjects instead of naming them. An association asks what two people both
+  belong to, and a solver given their names can look the pair up in public sources without
+  the confidential document at all. The prompt says not to name them; this checks.
 """
 
 from __future__ import annotations
@@ -119,12 +123,32 @@ def answer_is_substantive(item: Item) -> bool:
     return len(item.answer.strip()) >= MIN_ANSWER_CHARS
 
 
+def withholds_what_it_was_told_to(item: Item) -> bool:
+    """The question does not name the subjects it was built to describe instead.
+
+    ``provenance["withheld"]`` is a semicolon-separated list set by the question type that
+    knows what naming would give away. An item that sets nothing passes: most types have
+    nothing to withhold beyond their answer, which a separate gate already covers.
+    """
+    withheld = [name.strip() for name in item.provenance.get("withheld", "").split(";")]
+    question = _words(item.question)
+    for name in withheld:
+        tokens = _words(name)
+        if not tokens:
+            continue
+        span = len(tokens)
+        if any(question[i : i + span] == tokens for i in range(len(question) - span + 1)):
+            return False
+    return True
+
+
 GATES: dict[str, Gate] = {
     "two_sided": two_sided,
     "answer_not_in_question": answer_not_in_question,
     "no_source_attribution": no_source_attribution,
     "not_a_bare_attribute": not_a_bare_attribute,
     "answer_is_substantive": answer_is_substantive,
+    "withholds_what_it_was_told_to": withholds_what_it_was_told_to,
 }
 
 

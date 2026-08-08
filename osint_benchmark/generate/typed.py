@@ -239,6 +239,10 @@ def from_association(
                 "b_qid": item.b,
                 "predicate": item.predicate,
                 "shared_degree": str(item.degree),
+                # Naming either of them lets a public-only solver look the pair up, and the
+                # question stops needing the confidential document. The prompt says not to;
+                # the gate suite checks.
+                "withheld": f"{labels.get(item.a, '')}; {labels.get(item.b, '')}",
             },
         )
 

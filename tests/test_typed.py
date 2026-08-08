@@ -456,3 +456,62 @@ class TestTypedPipeline:
 
         assert "MEIER" in candidates[0].passage
         assert outcomes["mentions_located"] == 2
+
+
+class TestWithholding:
+    """The names an association question must describe instead of using."""
+
+    def _item(self, question, withheld="Anna Meier; Beat Weber"):
+        """Return an association item asking the given question."""
+        from osint_benchmark.generate.item import Evidence, Item
+
+        return Item(
+            item_id="cablegate:1|Q1|Q2|Q7",
+            question_type="association",
+            question=question,
+            answer="Helvetic Society",
+            evidence=[
+                Evidence(doc_id="cablegate:1", source="cablegate", side="private"),
+                Evidence(doc_id="enwiki:Q7", source="wikipedia", side="public"),
+            ],
+            provenance={"withheld": withheld},
+        )
+
+    def test_a_question_naming_the_pair_is_rejected(self):
+        """A solver given both names looks the pair up and never needs the document."""
+        from osint_benchmark.generate import gates
+
+        item = self._item("What body do Anna Meier and Beat Weber both belong to?")
+
+        assert gates.run(item)["withholds_what_it_was_told_to"] is False
+
+    def test_a_question_describing_them_passes(self):
+        """Which is the whole point of the type: the situation identifies them."""
+        from osint_benchmark.generate import gates
+
+        item = self._item("What body did the two negotiators at that lunch both belong to?")
+
+        assert gates.run(item)["withholds_what_it_was_told_to"] is True
+
+    def test_a_type_with_nothing_to_withhold_passes(self):
+        """Most types withhold only their answer, which another gate already covers."""
+        from osint_benchmark.generate import gates
+
+        item = self._item("Who chaired the session?", withheld="")
+
+        assert gates.run(item)["withholds_what_it_was_told_to"] is True
+
+    def test_the_builder_records_both_names_as_withheld(self):
+        """The gate can only check what the builder tells it to."""
+        candidate = next(
+            iter(
+                typed.from_association(
+                    [TestFromAssociation()._item()],
+                    TestFromAssociation()._texts(),
+                    TestFromAssociation.LABELS,
+                    TestFromAssociation.ARTICLES,
+                )
+            )
+        )
+
+        assert candidate.provenance["withheld"] == "Anna Meier; Beat Weber"
