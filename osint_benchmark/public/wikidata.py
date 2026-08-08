@@ -196,6 +196,7 @@ def fetch_entities(
     on_error: Callable[[str, Exception], None] | None = None,
     one: Fetch = fetch_entity,
     workers: int = 1,
+    progress: Callable[[int], None] | None = None,
 ) -> Iterator[dict]:
     """Yield one record per entity, skipping and reporting the ones that fail.
 
@@ -221,7 +222,11 @@ def fetch_entities(
         except (urllib.error.URLError, OSError, ValueError) as exc:
             return exc
 
+    done = 0
     for chunk, payload in zip(chunks, public.in_flight(attempt, chunks, workers), strict=True):
+        done += len(chunk)
+        if progress is not None:
+            progress(done)
         if isinstance(payload, Exception):
             exc = payload
             for qid in chunk:

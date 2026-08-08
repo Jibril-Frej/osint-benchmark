@@ -19,7 +19,7 @@ import argparse
 import sys
 from itertools import chain
 
-from osint_benchmark import paths
+from osint_benchmark import paths, public
 from osint_benchmark.artifacts import Provenance, read_jsonl, write_records
 from osint_benchmark.generate import association
 from osint_benchmark.public import articles, wikidata
@@ -170,11 +170,25 @@ def main(argv: list[str] | None = None) -> int:
     # said, so the records have to be read before any of them can be written. The previous
     # project's whole slice was 24 MB.
     wanted = [qid for qid in qids if qid not in have]
-    records = kept + list(wikidata.fetch_entities(wanted, on_error=note, workers=args.workers))
+    records = kept + list(
+        wikidata.fetch_entities(
+            wanted,
+            on_error=note,
+            workers=args.workers,
+            progress=public.reporting("wikidata", len(wanted)),
+        )
+    )
     if args.neighbours:
         extra = [qid for qid in neighbours_of(records, association.RELATIONAL) if qid not in have]
         print(f"{len(extra)} entities reachable through a relational predicate")
-        records += list(wikidata.fetch_entities(extra, on_error=note, workers=args.workers))
+        records += list(
+            wikidata.fetch_entities(
+                extra,
+                on_error=note,
+                workers=args.workers,
+                progress=public.reporting("neighbours", len(extra)),
+            )
+        )
         qids += extra
 
     facts = paths.data_dir() / "facts" / "wikidata.jsonl"
@@ -207,7 +221,15 @@ def main(argv: list[str] | None = None) -> int:
     text = paths.data_dir() / "facts" / "articles.jsonl"
     written = write_records(
         text,
-        chain(have_text, articles.fetch_articles(pairs, on_error=note, workers=args.workers)),
+        chain(
+            have_text,
+            articles.fetch_articles(
+                pairs,
+                on_error=note,
+                workers=args.workers,
+                progress=public.reporting("articles", len(pairs)),
+            ),
+        ),
         Provenance(
             source="en.wikipedia.org action API (prop=extracts|revisions|info, exintro)",
             source_fields=("title", "pageid", "extract", "revisions", "length", "missing"),

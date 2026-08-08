@@ -62,6 +62,7 @@ def fetch_articles(
     pause: float = 0.1,
     on_error: Callable[[str, Exception], None] | None = None,
     workers: int = 1,
+    progress: Callable[[int], None] | None = None,
 ) -> Iterator[dict]:
     """Yield one record per (QID, title), skipping and reporting failures.
 
@@ -82,7 +83,11 @@ def fetch_articles(
         except (urllib.error.URLError, OSError, ValueError) as exc:
             return exc
 
+    done = 0
     for titles, payload in zip(chunks, public.in_flight(attempt, chunks, workers), strict=True):
+        done += len(titles)
+        if progress is not None:
+            progress(done)
         if isinstance(payload, Exception):
             if on_error is not None:
                 on_error(", ".join(titles), payload)

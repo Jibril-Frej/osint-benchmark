@@ -60,3 +60,27 @@ def in_flight(work: Callable[[list], object], chunks: list, workers: int) -> Ite
         return
     with ThreadPoolExecutor(max_workers=workers) as pool:
         yield from pool.map(work, chunks)
+
+
+def reporting(what: str, total: int, every: int = 25) -> Callable[[int], None]:
+    """Return a callback that prints how far along a long fetch is.
+
+    Written after watching a fetch stage sit silent for forty-eight minutes with no way to
+    tell work from a hang -- the failures were being collected and printed at the end, so
+    silence meant either. A line every few hundred entities costs nothing and answers it.
+    """
+    start = time.monotonic()
+
+    def progress(done: int) -> None:
+        if done % every and done != total:
+            return
+        elapsed = time.monotonic() - start
+        rate = done / elapsed if elapsed else 0.0
+        left = (total - done) / rate if rate else 0.0
+        print(
+            f"  {what}: {done}/{total} in {elapsed / 60:.0f}m"
+            f" ({rate * 60:.0f}/min, about {left / 60:.0f}m left)",
+            flush=True,
+        )
+
+    return progress
