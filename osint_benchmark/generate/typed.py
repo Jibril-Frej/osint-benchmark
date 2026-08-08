@@ -38,7 +38,7 @@ from __future__ import annotations
 import json
 import sys
 from collections import Counter
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 
 from osint_benchmark.generate import passage, resolution
@@ -157,6 +157,23 @@ def names(text: str, label: str) -> bool:
     return bool(label) and passage.normalise(label) in passage.normalise(text)
 
 
+def remembering(source: dict[str, str]) -> Callable[[str], str]:
+    """Return a lookup that normalises each text once and keeps the result.
+
+    A document naming six people yields fifteen pairs and each condition below re-reads the
+    same two articles and the same cable. Without this, normalising runs over gigabytes of
+    text that has already been normalised.
+    """
+    seen: dict[str, str] = {}
+
+    def normalised(key: str) -> str:
+        if key not in seen:
+            seen[key] = passage.normalise(source.get(key, ""))
+        return seen[key]
+
+    return normalised
+
+
 def from_association(
     items: Iterable[Association],
     texts: dict[str, str],
@@ -172,6 +189,8 @@ def from_association(
     """
     if outcomes is None:
         outcomes = Counter()
+    read_article = remembering(articles)
+    read_document = remembering(texts)
     for item in items:
         private = texts.get(item.doc_id, "")
         if not private:
@@ -188,12 +207,12 @@ def from_association(
             # by default, which would readmit the publicly obvious pairs this type excludes.
             outcomes["pair_untestable"] += 1
             continue
-        if names(articles[item.a], labels.get(item.b, "")) or names(
-            articles[item.b], labels.get(item.a, "")
-        ):
+        if passage.normalise(labels.get(item.b, "")) in read_article(item.a) or passage.normalise(
+            labels.get(item.a, "")
+        ) in read_article(item.b):
             outcomes["pair_co_occurs_publicly"] += 1
             continue
-        if names(private, answer):
+        if passage.normalise(answer) in read_document(item.doc_id):
             # The private document names the affiliation itself, so the public record adds
             # nothing and a solver holding one document can answer.
             outcomes["gold_named_privately"] += 1
