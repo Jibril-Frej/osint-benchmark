@@ -20,6 +20,7 @@ import sys
 
 from osint_benchmark import paths
 from osint_benchmark.artifacts import Provenance, read_jsonl, write_records
+from osint_benchmark.generate import association
 from osint_benchmark.public import articles, wikidata
 
 
@@ -57,6 +58,26 @@ def linked_entities(confidence: float = 0.0, limit: int | None = None) -> list[s
     return qids[:limit] if limit else qids
 
 
+def neighbours_of(records: list[dict], predicates: frozenset[str]) -> list[str]:
+    """Return the entities the fetched ones point at through the given predicates.
+
+    A second hop, and the association type cannot work without it. What that type asks for
+    is the organisation two people both belong to — and an organisation nobody wrote a
+    document about is never linked, so it is absent from the first hop by construction. Its
+    label is the answer and its article is the public evidence, so both have to be fetched.
+    """
+    seen = {record["qid"] for record in records}
+    out: dict[str, None] = {}
+    for record in records:
+        for predicate, values in (record.get("statements") or {}).items():
+            if predicate not in predicates:
+                continue
+            for value in values:
+                if isinstance(value, str) and value.startswith("Q") and value not in seen:
+                    out.setdefault(value)
+    return list(out)
+
+
 def titles_for(qids: list[str], index_name: str = "wikipedia_index") -> list[tuple[str, str]]:
     """Return (QID, article title) for the entities that have an article."""
     index = paths.docs_dir() / f"{index_name}.jsonl"
@@ -87,6 +108,15 @@ def main(argv: list[str] | None = None) -> int:
         help="with --scope linked, ignore mentions the linker was less sure of than this",
     )
     parser.add_argument("--index", default="wikipedia_index", help="which entity index to read")
+    parser.add_argument(
+        "--neighbours",
+        action="store_true",
+        help=(
+            "also fetch the entities the first hop points at through a relational "
+            "predicate. The association type answers with an organisation that may itself "
+            "appear in no document, so it is reachable only this way"
+        ),
+    )
     args = parser.parse_args(argv)
 
     if args.scope == "linked":
@@ -99,10 +129,20 @@ def main(argv: list[str] | None = None) -> int:
     def note(key: str, exc: Exception) -> None:
         failures.append(f"{key}: {exc}")
 
+    # Held rather than streamed to disk: the second hop is chosen from what the first one
+    # said, so the records have to be read before any of them can be written. The previous
+    # project's whole slice was 24 MB.
+    records = list(wikidata.fetch_entities(qids, on_error=note))
+    if args.neighbours:
+        extra = neighbours_of(records, association.RELATIONAL)
+        print(f"{len(extra)} entities reachable through a relational predicate")
+        records += list(wikidata.fetch_entities(extra, on_error=note))
+        qids += extra
+
     facts = paths.data_dir() / "facts" / "wikidata.jsonl"
     written = write_records(
         facts,
-        wikidata.fetch_entities(qids, on_error=note),
+        records,
         Provenance(
             source="wikidata.org Special:EntityData",
             source_fields=("labels", "descriptions", "claims", "sitelinks", "aliases"),
@@ -128,19 +168,20 @@ def main(argv: list[str] | None = None) -> int:
         text,
         articles.fetch_articles(pairs, on_error=note),
         Provenance(
-            source="en.wikipedia.org action API (prop=extracts, exintro)",
-            source_fields=("title", "pageid", "extract", "revisions", "missing"),
+            source="en.wikipedia.org action API (prop=extracts|revisions|info, exintro)",
+            source_fields=("title", "pageid", "extract", "revisions", "length", "missing"),
             kept={
                 "title": "title",
                 "pageid": "page_id",
                 "extract": "text (lead section, plain text)",
                 "revisions": "revision and revision_date",
+                "length": "article_bytes (the whole article's size, the prominence signal)",
             },
             dropped={"missing": "used as a filter: an absent article yields no record"},
             kind="derived",
             note=(
-                "Lead sections only, for bridge entities only. The full corpus a system "
-                "searches is a different artefact and is specified, not built here."
+                "Lead sections only. The full corpus a system searches is a different "
+                "artefact and is specified, not built here."
             ),
         ),
         rows_in=len(pairs),

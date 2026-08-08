@@ -42,6 +42,10 @@ KEEP_PROPERTIES = {
     "P571": "inception",
     "P576": "dissolved",
     "P112": "founder",
+    # Who someone works for. The previous project's association type named ``employer`` among
+    # the affiliations it would build a question on, but its slice never fetched P108, so the
+    # predicate could not fire and three of the four did the work. Fetched here, so it can.
+    "P108": "employer",
     "P169": "chief_executive",
     "P488": "chairperson",
     "P452": "industry",

@@ -33,7 +33,12 @@ def fetch_titles(titles: list[str], timeout: float = 60.0) -> dict:
         "action": "query",
         "format": "json",
         "formatversion": "2",
-        "prop": "extracts|revisions",
+        # ``info`` costs nothing extra and carries ``length``, the whole article's size in
+        # bytes. That is the prominence signal: the lead this request returns is a poor one,
+        # because a world figure's lead and a minor official's are both a few paragraphs.
+        # Full plain text would be the direct measure, but the API serves it one article per
+        # request, which is 62,000 requests rather than 3,100.
+        "prop": "extracts|revisions|info",
         "exintro": "1",
         "explaintext": "1",
         "rvprop": "ids|timestamp",
@@ -78,6 +83,7 @@ def fetch_articles(
                 "page_id": page.get("pageid"),
                 "revision": revisions[0].get("revid"),
                 "revision_date": revisions[0].get("timestamp"),
+                "article_bytes": page.get("length", 0),
                 "text": extract,
             }
         if pause:

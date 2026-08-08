@@ -16,8 +16,8 @@ LABELS = {
     "Q9": "Solitary Name",
 }
 PEOPLE = {"Q1", "Q2", "Q3", "Q9"}
-# Hosni is the famous one; the other two are minor figures.
-ARTICLES = {"Q1": 90000, "Q2": 1200, "Q3": 2500, "Q9": 500}
+# Whole-article sizes in bytes. Hosni is the famous one; the other two are minor figures.
+ARTICLES = {"Q1": 107885, "Q2": 3377, "Q3": 25491, "Q9": 500}
 
 
 def _links(*entities, doc_id="cablegate:1"):
@@ -64,7 +64,7 @@ class TestBuild:
         assert items[0].rank == 2
 
     def test_the_most_prominent_bearer_is_not_a_question(self):
-        """ "Mubarak" collides with eight entities and every solver answers Hosni.
+        """The name Mubarak collides with eight entities and every solver answers Hosni.
 
         Catalogue ambiguity is not difficulty when prior fame settles it.
         """
@@ -75,7 +75,7 @@ class TestBuild:
 
         Being less famous than a namesake is not the same as being obscure.
         """
-        articles = {"Q1": 90000, "Q2": 60000, "Q3": 2500}
+        articles = {"Q1": 274979, "Q2": 132315, "Q3": 25491}
 
         assert _build(("Q2", "Mubarak", 0.99), articles=articles) == []
 
@@ -87,14 +87,14 @@ class TestBuild:
         """With a single bearer the public catalogue answers unaided."""
         labels = {"Q2": "Alaa Mubarak"}
         items = list(
-            resolution.build(_links(("Q2", "Mubarak", 0.99)), labels, {"Q2"}, {"Q2": 1200})
+            resolution.build(_links(("Q2", "Mubarak", 0.99)), labels, {"Q2"}, {"Q2": 3377})
         )
 
         assert items == []
 
     def test_an_entity_with_no_article_is_not_answerable(self):
         """A question whose answer nobody has written about has no public side."""
-        assert _build(("Q2", "Mubarak", 0.99), articles={"Q1": 90000, "Q3": 2500}) == []
+        assert _build(("Q2", "Mubarak", 0.99), articles={"Q1": 107885, "Q3": 25491}) == []
 
     def test_a_short_surface_is_noise_not_a_mention(self):
         """Three characters is an initialism or an OCR artefact."""
