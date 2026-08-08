@@ -35,7 +35,8 @@
 #                       link files it was fetched for -- a wider link set needs a wider
 #                       slice, and a narrower one carries entities no document names.
 #   OSINT_PER_TYPE      candidates of each type to phrase (default 150)
-#   OSINT_TYPES         which types to build (default association,resolution)
+#   OSINT_TYPES         which types to build (default association,resolution,
+#                       chronology,posture)
 #   OSINT_GEN_MODEL     the phraser (default Qwen/QwQ-32B)
 #   OSINT_WORKERS       requests in flight at once (default 8). The server batches
 #                       continuously; one at a time leaves both GPUs mostly idle.
@@ -52,7 +53,7 @@ set -euo pipefail
 
 STRIDE="${OSINT_LINK_STRIDE:-3}"
 PER_TYPE="${OSINT_PER_TYPE:-150}"
-TYPES="${OSINT_TYPES:-association,resolution}"
+TYPES="${OSINT_TYPES:-association,resolution,chronology,posture}"
 MODEL="${OSINT_GEN_MODEL:-Qwen/QwQ-32B}"
 WORKERS="${OSINT_WORKERS:-8}"
 STUB="${OSINT_STUB:-}"
@@ -131,19 +132,24 @@ export OSINT_SERVED_MODEL="$MODEL"
 export OSINT_TRANSCRIPT="$WORK/model-calls.jsonl"
 
 echo "=== 1/6 sources ==="
-uv run python pipeline/01_sources.py cablegate dodis wikipedia_index
+# parliament as well as the two confidential corpora: the chronology and posture types are
+# built on the join between a cable and a parliamentary business item, so both sides have to
+# be parsed, not merely linked.
+uv run python pipeline/01_sources.py cablegate dodis parliament wikipedia_index
 
 echo "=== 2/6 link ==="
 if [ -n "$LINKS" ]; then
-  for source in cablegate dodis; do
-    cp "$LINKS/$source.jsonl" "$OSINT_DATA/links/$source.jsonl"
-    cp "$LINKS/$source.jsonl.provenance.json" "$OSINT_DATA/links/" 2>/dev/null || true
-  done
+  # Whatever link files the directory holds, rather than a fixed list: a run that adds a
+  # corpus should not need this script edited, and a missing one is visible in the count
+  # printed below.
+  cp "$LINKS"/*.jsonl "$OSINT_DATA/links/" 2>/dev/null || true
+  cp "$LINKS"/*.provenance.json "$OSINT_DATA/links/" 2>/dev/null || true
+  # The slice files live in the same directory on a reused run; they are not link files.
+  rm -f "$OSINT_DATA/links/wikidata.jsonl" "$OSINT_DATA/links/articles.jsonl"
   echo "reused the link files in $LINKS"
   # The slice is only valid for the link set it was fetched against, and --resume decides
   # what to fetch by comparing the two. A mismatch is silent otherwise.
-  echo "link files: $(wc -l < "$OSINT_DATA/links/cablegate.jsonl") cables, \
-$(wc -l < "$OSINT_DATA/links/dodis.jsonl") dodis documents"
+  wc -l "$OSINT_DATA"/links/*.jsonl
 else
   uv run python pipeline/02_link.py --check --device cuda
   uv run python pipeline/02_link.py cablegate --index wikipedia_index --device cuda \
