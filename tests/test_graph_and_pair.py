@@ -195,10 +195,32 @@ class TestEntityTypes:
     def test_an_organisation_type_nobody_listed_still_bridges(self):
         """Associated Press is a news agency, a cooperative and a nonprofit.
 
-        None of the three were in the allowlist, so a real named agency came out unknown
-        and was dropped. An allowlist cannot anticipate the tail of organisation types.
+        None of the three are in the allowlist, so a flat list dropped a real named agency.
+        What admits it is descent from organisation, resolved through P279*.
         """
-        assert entity_types.classify({"instance_of": ["Q192283", "Q163740"]}) == "bridgeable"
+        news_agency = {"instance_of": ["Q192283", "Q163740"]}
+
+        assert entity_types.classify(news_agency, organisations={"Q192283"}) == "bridgeable"
+
+    def test_a_place_may_not_bridge_however_it_is_classified(self):
+        """The canton problem.
+
+        Dodis against the parliamentary record bridged on twenty of them, and each patch to
+        the denylist had the next category queued behind it.
+        """
+        canton = {"instance_of": ["Q23058"]}
+
+        assert entity_types.classify(canton, organisations=set()) == "blocked"
+
+    def test_a_sovereign_state_does_not_return_through_organisation_hood(self):
+        """Wikidata models a state as a kind of organisation.
+
+        Testing descent from organisation before geography would let every country back in
+        through the door just closed on it.
+        """
+        state = {"instance_of": ["Q43229", "Q3624078"]}
+
+        assert entity_types.classify(state, organisations={"Q43229", "Q3624078"}) == "blocked"
 
     def test_an_entity_with_no_type_at_all_is_excluded_by_default(self):
         """An entity nobody can vouch for is how the country problem returns by another route."""

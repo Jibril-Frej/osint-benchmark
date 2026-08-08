@@ -77,15 +77,21 @@ def main(argv: list[str] | None = None) -> int:
         if not facts_path.exists():
             raise SystemExit(f"{facts_path} is missing: run pipeline/04_public.py first")
         facts = list(read_jsonl(facts_path))
-        counts = entity_types.summarise(facts)
-        allowed = entity_types.bridgeable_qids(facts)
+        # Resolve organisation-hood through the class hierarchy once, for every class these
+        # entities are an instance of. A flat list of class ids cannot do it: Associated
+        # Press is a news agency, which is a subclass of organisation.
+        organisations, places = entity_types.kinds_present(entity_types.classes_in(facts))
+        print(f"entity classes present: {len(organisations)} organisations, {len(places)} places")
+        counts = entity_types.summarise(facts, organisations, places)
+        allowed = entity_types.bridgeable_qids(facts, organisations=organisations, places=places)
         before = len(bridges)
         bridges = [b for b in bridges if b["qid"] in allowed]
         print(f"entity types: {counts}; {len(bridges)} of {before} bridges may anchor a pair")
         note = (
             f"Only entities whose Wikidata class can anchor a question: {counts}. "
-            "Countries and other geography are excluded -- they co-occur with everything "
-            "and so distinguish nothing."
+            "Only people and organisations may anchor a question. Places are excluded "
+            "however they are classified: they co-occur with everything and so "
+            "distinguish nothing."
         )
 
     pairs = join.pair_documents(

@@ -1,13 +1,33 @@
-"""Decide which entities may bridge, by what kind of thing they are.
+"""Decide which entities may bridge: people and organisations, and nothing else.
+
+The previous project never had to decide this. Its knowledge base was built *around*
+persons and organisations — parliamentarians indexed by name and verified on birth date,
+companies with commercial-register entries — so a canton could not become a bridge because
+nothing ever proposed one.
+
+This project proposes every shared entity and filters afterwards, which is why the filter
+kept losing. It began by blocking countries; then cities; then, when Dodis met the
+parliamentary record, the top twenty bridges were Swiss cantons. Each patch was correct
+and the next category was already queued behind it.
+
+So the test is now the one the previous project enforced structurally: an entity may
+anchor a question if it is a **person** or an **organisation**. Everything else is out,
+including places, whether or not anyone remembered to list them.
 
 The first real run bridged only on countries, and every question it produced was of the
 form "what connects Cameroon and Canada?" — the answer being that both documents mention
 international relations. That is not a bridge, it is a coincidence of two documents each
 naming a country.
 
-A country co-occurs with everything, so it distinguishes nothing. The entities worth
-building a question on are the ones specific enough that two documents naming the same one
-are probably about the same thing: a person, a company, an organisation, an event.
+A country co-occurs with everything, so it distinguishes nothing. What is specific enough
+that two documents naming it are probably about the same matter is a person or a named
+organisation.
+
+Membership is not a flat list, because Wikidata does not work that way: Associated Press is
+an instance of *news agency*, which is a subclass of organisation, and an allowlist of
+class ids dropped it. So organisation-hood is resolved through ``P279*`` — the one query
+this module makes — while people need no hierarchy at all, since Wikidata types every
+human as ``Q5``.
 
 Types come from Wikidata ``P31``/``P279``, not from the linker. The previous project's note
 is explicit that ReFinED's own coarse types are unreliable — it labels countries ORG — so
@@ -18,10 +38,17 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-# Classes that plainly may anchor a bridge. No longer a gate -- an allowlist cannot
-# anticipate the tail of organisation types, and excluding what it failed to list dropped
-# real named entities. Kept as documentation of what this filter is for, and read by
-# nothing that decides.
+HUMAN = "Q5"
+ORGANISATION = "Q43229"
+# Everything with a location on the earth descends from this, including every
+# administrative subdivision. It has to be resolved through the hierarchy exactly as
+# organisation-hood is, and it has to win: Wikidata models a canton as a kind of
+# organisation, so testing only for organisations admitted all twenty-six of them.
+PLACE = "Q2221906"
+
+# Kept as documentation of the kinds this filter is meant to admit. Not a gate: an
+# allowlist cannot anticipate the tail of organisation types, and excluding what it failed
+# to list dropped Associated Press. What decides is descent from ORGANISATION.
 BRIDGEABLE = {
     "Q5": "human",
     "Q43229": "organization",
@@ -66,7 +93,39 @@ NOT_BRIDGEABLE = {
 }
 
 
-def classify(statements: dict[str, list[str]]) -> str:
+def descendants_of(classes: Iterable[str], ancestor: str, query=None) -> set[str]:
+    """Return which of these Wikidata classes descend from one, following ``P279*``.
+
+    One query for the whole set. Asked per entity this would be thousands of round trips;
+    asked per *class* it is a few dozen, because a bridge map draws on far fewer kinds of
+    thing than it has things.
+    """
+    from osint_benchmark.link import reconcile  # noqa: PLC0415 - avoids a circular import
+
+    wanted = sorted({c for c in classes if c})
+    if not wanted:
+        return set()
+    values = " ".join(f"wd:{c}" for c in wanted)
+    rows = (query or reconcile.sparql)(
+        f"SELECT DISTINCT ?c WHERE {{ VALUES ?c {{ {values} }} ?c wdt:P279* wd:{ancestor} }}"
+    )
+    return {row["c"]["value"].rsplit("/", 1)[-1] for row in rows}
+
+
+def kinds_present(classes: Iterable[str], query=None) -> tuple[set[str], set[str]]:
+    """Return ``(organisation classes, place classes)`` among the ones given."""
+    classes = sorted({c for c in classes if c})
+    return (
+        descendants_of(classes, ORGANISATION, query),
+        descendants_of(classes, PLACE, query),
+    )
+
+
+def classify(
+    statements: dict[str, list[str]],
+    organisations: set[str] | None = None,
+    places: set[str] | None = None,
+) -> str:
     """Return ``bridgeable``, ``blocked`` or ``unknown`` for one entity's statements.
 
     Three tests, in order, and the first is the one that was missing.
@@ -89,20 +148,32 @@ def classify(statements: dict[str, list[str]]) -> str:
     kinds = set(statements.get("instance_of", ()))
     if statements.get("subclass_of"):
         return "blocked"
+    # Geography vetoes, and must be tested before organisation-hood rather than after:
+    # Wikidata models a sovereign state and a canton as kinds of organisation, so descent
+    # from ORGANISATION alone lets every country and all twenty-six cantons back in
+    # through the door just closed on them.
     if kinds & set(NOT_BRIDGEABLE):
+        return "blocked"
+    if places and kinds & places:
         return "blocked"
     if not kinds:
         return "unknown"
-    # Anything else that is a specific thing. BRIDGEABLE was an allowlist and is now only
-    # a description, because an allowlist cannot anticipate the tail: Associated Press is
-    # an instance of news agency, cooperative and nonprofit organisation, none of which
-    # were in it, so a real named agency came out unknown and was dropped. That is the
-    # same failure the linker's coarse-type allowlist had, and the same fix -- name what
-    # may not bridge, and let the rest through.
-    return "bridgeable"
+    if HUMAN in kinds:
+        return "bridgeable"
+    if organisations is None:
+        # Without the hierarchy, only the classes named above can be recognised. That is
+        # the old allowlist and it drops real organisations, so a caller who cares passes
+        # the resolved set.
+        return "bridgeable" if kinds & set(BRIDGEABLE) else "blocked"
+    return "bridgeable" if kinds & organisations else "blocked"
 
 
-def bridgeable_qids(facts: Iterable[dict], keep_unknown: bool = False) -> set[str]:
+def bridgeable_qids(
+    facts: Iterable[dict],
+    keep_unknown: bool = False,
+    organisations: set[str] | None = None,
+    places: set[str] | None = None,
+) -> set[str]:
     """Return the QIDs allowed to anchor a bridge.
 
     ``keep_unknown`` decides what happens to entities whose type we could not read. The
@@ -111,15 +182,24 @@ def bridgeable_qids(facts: Iterable[dict], keep_unknown: bool = False) -> set[st
     """
     allowed = set()
     for record in facts:
-        verdict = classify(record.get("statements", {}))
+        verdict = classify(record.get("statements", {}), organisations, places)
         if verdict == "bridgeable" or (keep_unknown and verdict == "unknown"):
             allowed.add(record["qid"])
     return allowed
 
 
-def summarise(facts: Iterable[dict]) -> dict[str, int]:
+def summarise(
+    facts: Iterable[dict],
+    organisations: set[str] | None = None,
+    places: set[str] | None = None,
+) -> dict[str, int]:
     """Return how many entities fall into each class, for a run to report."""
     counts = {"bridgeable": 0, "blocked": 0, "unknown": 0}
     for record in facts:
-        counts[classify(record.get("statements", {}))] += 1
+        counts[classify(record.get("statements", {}), organisations, places)] += 1
     return counts
+
+
+def classes_in(facts: Iterable[dict]) -> set[str]:
+    """Return every class any of these entities is an instance of."""
+    return {qid for record in facts for qid in record.get("statements", {}).get("instance_of", ())}
