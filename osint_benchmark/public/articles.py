@@ -20,6 +20,8 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable, Iterable, Iterator
 
+from osint_benchmark import public
+
 API = "https://en.wikipedia.org/w/api.php"
 USER_AGENT = "osint-benchmark/0.1 (research; https://github.com/Jibril-Frej/osint-benchmark)"
 BATCH = 20
@@ -46,8 +48,12 @@ def fetch_titles(titles: list[str], timeout: float = 60.0) -> dict:
     }
     url = f"{API}?{urllib.parse.urlencode(params)}"
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
-        return json.loads(response.read())
+
+    def read() -> dict:
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+            return json.loads(response.read())
+
+    return public.patiently(read)
 
 
 def fetch_articles(
