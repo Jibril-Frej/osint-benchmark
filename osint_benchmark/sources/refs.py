@@ -42,7 +42,10 @@ DATE_FIELDS = {
     "sanctions": ("added", "list_date"),
     "ucdp": ("date_start",),
     "gdelt": ("date",),
-    "parliament": ("date",),
+    # Curia Vista names it SubmissionDate, and the previous project read that. Writing
+    # "date" here left every parliamentary item undated, which is the third time a
+    # guessed date field has silently made every pair non-contemporaneous.
+    "parliament": ("SubmissionDate", "BusinessStatusDate", "date"),
 }
 
 

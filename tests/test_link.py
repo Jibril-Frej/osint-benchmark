@@ -502,3 +502,21 @@ class TestReferences:
         from osint_benchmark.sources import refs
 
         assert refs.record_date("wikipedia_index", {"date": "2020-01-01"}) is None
+
+
+class TestParliamentDate:
+    """Curia Vista does not call it "date"."""
+
+    def test_the_submission_date_is_the_date(self):
+        """Reading "date" left every parliamentary item undated, so no pair had an interval."""
+        from osint_benchmark.sources import refs
+
+        record = {"SubmissionDate": "1995-03-14", "Modified": "2004-01-01"}
+
+        assert refs.record_date("parliament", record) == "1995-03-14"
+
+    def test_a_status_date_serves_when_there_is_no_submission(self):
+        """Coarse beats absent: the pairing step compares intervals."""
+        from osint_benchmark.sources import refs
+
+        assert refs.record_date("parliament", {"BusinessStatusDate": "1996-01-01"}) == "1996-01-01"
