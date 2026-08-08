@@ -117,6 +117,16 @@ def main(argv: list[str] | None = None) -> int:
             "appear in no document, so it is reachable only this way"
         ),
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help=(
+            "how many requests to have in flight. The article leads are latency-bound and "
+            "gain almost linearly; the Wikidata slice is bandwidth-bound and gains about "
+            "half again"
+        ),
+    )
     args = parser.parse_args(argv)
 
     if args.scope == "linked":
@@ -132,11 +142,11 @@ def main(argv: list[str] | None = None) -> int:
     # Held rather than streamed to disk: the second hop is chosen from what the first one
     # said, so the records have to be read before any of them can be written. The previous
     # project's whole slice was 24 MB.
-    records = list(wikidata.fetch_entities(qids, on_error=note))
+    records = list(wikidata.fetch_entities(qids, on_error=note, workers=args.workers))
     if args.neighbours:
         extra = neighbours_of(records, association.RELATIONAL)
         print(f"{len(extra)} entities reachable through a relational predicate")
-        records += list(wikidata.fetch_entities(extra, on_error=note))
+        records += list(wikidata.fetch_entities(extra, on_error=note, workers=args.workers))
         qids += extra
 
     facts = paths.data_dir() / "facts" / "wikidata.jsonl"
@@ -166,7 +176,7 @@ def main(argv: list[str] | None = None) -> int:
     text = paths.data_dir() / "facts" / "articles.jsonl"
     written = write_records(
         text,
-        articles.fetch_articles(pairs, on_error=note),
+        articles.fetch_articles(pairs, on_error=note, workers=args.workers),
         Provenance(
             source="en.wikipedia.org action API (prop=extracts|revisions|info, exintro)",
             source_fields=("title", "pageid", "extract", "revisions", "length", "missing"),

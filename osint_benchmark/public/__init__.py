@@ -13,7 +13,8 @@ from __future__ import annotations  # noqa: E402  (the module docstring comes fi
 
 import time  # noqa: E402
 import urllib.error  # noqa: E402
-from collections.abc import Callable  # noqa: E402
+from collections.abc import Callable, Iterator  # noqa: E402
+from concurrent.futures import ThreadPoolExecutor  # noqa: E402
 
 # What a Wikimedia server says when it wants us to slow down, or is briefly unavailable.
 # Retried rather than reported: a slice is tens of thousands of requests and meets one of
@@ -37,3 +38,25 @@ def patiently(read: Callable[[], dict], attempts: int = 5, backoff: float = 5.0)
                 raise
             time.sleep(backoff * (attempt + 1))
     raise RuntimeError("unreachable: the loop above either returns or raises")
+
+
+def in_flight(work: Callable[[list], object], chunks: list, workers: int) -> Iterator:
+    """Yield each chunk's result, running ``workers`` of them at a time.
+
+    Measured against the live APIs, four at a time, each on titles the other run had not
+    touched: the Wikidata slice went 1.45x faster and the article leads 1.6x. Both are far
+    short of four, because the limit is the far end rather than the round trip -- 50
+    entities are 16 MB, since ``wbgetentities`` returns every identifier and reference and
+    there is no way to ask it not to.
+
+    Worth measuring twice: run back to back over the same titles, the second one looked 36x
+    faster, which was Wikipedia's cache and not concurrency at all.
+
+    Results come back in order either way, so nothing downstream can tell how many were in
+    flight.
+    """
+    if workers <= 1:
+        yield from (work(chunk) for chunk in chunks)
+        return
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        yield from pool.map(work, chunks)

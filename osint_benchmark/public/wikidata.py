@@ -195,6 +195,7 @@ def fetch_entities(
     pause: float = 0.1,
     on_error: Callable[[str, Exception], None] | None = None,
     one: Fetch = fetch_entity,
+    workers: int = 1,
 ) -> Iterator[dict]:
     """Yield one record per entity, skipping and reporting the ones that fail.
 
@@ -211,11 +212,18 @@ def fetch_entities(
     is given up on.
     """
     order = list(dict.fromkeys(qids))
-    for start in range(0, len(order), BATCH):
-        chunk = order[start : start + BATCH]
+    chunks = [order[start : start + BATCH] for start in range(0, len(order), BATCH)]
+
+    def attempt(chunk: list[str]) -> dict | Exception:
+        """Return a chunk's payload, or the failure to be handled in order below."""
         try:
-            payload = fetch(chunk)
+            return fetch(chunk)
         except (urllib.error.URLError, OSError, ValueError) as exc:
+            return exc
+
+    for chunk, payload in zip(chunks, public.in_flight(attempt, chunks, workers), strict=True):
+        if isinstance(payload, Exception):
+            exc = payload
             for qid in chunk:
                 try:
                     yield record(qid, one(qid))

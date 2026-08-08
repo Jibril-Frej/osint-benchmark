@@ -61,6 +61,7 @@ def fetch_articles(
     fetch: Fetch = fetch_titles,
     pause: float = 0.1,
     on_error: Callable[[str, Exception], None] | None = None,
+    workers: int = 1,
 ) -> Iterator[dict]:
     """Yield one record per (QID, title), skipping and reporting failures.
 
@@ -69,13 +70,22 @@ def fetch_articles(
     """
     pairs = list(dict.fromkeys(entities))
     by_title = {title: qid for qid, title in pairs}
-    for start in range(0, len(pairs), BATCH):
-        titles = [title for _, title in pairs[start : start + BATCH]]
+    chunks = [
+        [title for _, title in pairs[start : start + BATCH]]
+        for start in range(0, len(pairs), BATCH)
+    ]
+
+    def attempt(titles: list[str]) -> dict | Exception:
+        """Return a batch's payload, or the failure to be reported in order below."""
         try:
-            payload = fetch(titles)
+            return fetch(titles)
         except (urllib.error.URLError, OSError, ValueError) as exc:
+            return exc
+
+    for titles, payload in zip(chunks, public.in_flight(attempt, chunks, workers), strict=True):
+        if isinstance(payload, Exception):
             if on_error is not None:
-                on_error(", ".join(titles), exc)
+                on_error(", ".join(titles), payload)
             continue
         for page in payload.get("query", {}).get("pages", []):
             title, extract = page.get("title", ""), (page.get("extract") or "").strip()
