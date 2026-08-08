@@ -35,12 +35,15 @@
 #   OSINT_PER_TYPE      candidates of each type to phrase (default 150)
 #   OSINT_TYPES         which types to build (default association,resolution)
 #   OSINT_GEN_MODEL     the phraser (default Qwen/QwQ-32B)
+#   OSINT_WORKERS       requests in flight at once (default 8). The server batches
+#                       continuously; one at a time leaves both GPUs mostly idle.
 set -euo pipefail
 
 STRIDE="${OSINT_LINK_STRIDE:-3}"
 PER_TYPE="${OSINT_PER_TYPE:-150}"
 TYPES="${OSINT_TYPES:-association,resolution}"
 MODEL="${OSINT_GEN_MODEL:-Qwen/QwQ-32B}"
+WORKERS="${OSINT_WORKERS:-8}"
 LINKS="${OSINT_LINKS:-}"
 FACTS="${OSINT_FACTS:-}"
 PORT="${OSINT_SERVE_PORT:-8000}"
@@ -69,7 +72,7 @@ export NCCL_P2P_DISABLE=1
 
 echo "node    $(hostname)"
 echo "model   $MODEL"
-echo "types   $TYPES, $PER_TYPE candidates each"
+echo "types   $TYPES, $PER_TYPE candidates each, $WORKERS requests in flight"
 echo "links   ${LINKS:-none supplied, cablegate will be relinked at stride $STRIDE}"
 echo "facts   ${FACTS:-none supplied, the whole slice will be fetched}"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
@@ -185,7 +188,8 @@ echo "ready after ${SECONDS}s"
 export OSINT_MODEL_ENDPOINT="http://127.0.0.1:$PORT"
 
 echo "=== 4/6 phrase, $PER_TYPE of each type ==="
-uv run python pipeline/06_generate.py --types "$TYPES" --per-type "$PER_TYPE"
+uv run python pipeline/06_generate.py --types "$TYPES" --per-type "$PER_TYPE" \
+  --workers "$WORKERS"
 keep
 
 echo "=== control: can the solver answer when the evidence contains the answer? ==="
@@ -194,7 +198,7 @@ echo "=== control: can the solver answer when the evidence contains the answer? 
 uv run python pipeline/07_necessity.py --control || echo "CONTROL FAILED -- necessity below is not trustworthy"
 
 echo "=== 5/6 necessity ==="
-uv run python pipeline/07_necessity.py
+uv run python pipeline/07_necessity.py --workers "$WORKERS"
 keep
 
 echo "=== 6/6 review page ==="

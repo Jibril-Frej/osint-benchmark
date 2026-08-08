@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Iterable, Iterator
+from concurrent.futures import ThreadPoolExecutor
 
 from osint_benchmark.generate.evidence import clip
 from osint_benchmark.generate.item import Item, Necessity
@@ -117,14 +118,22 @@ def measure_items(
     solver: Complete,
     judge: Complete | None = None,
     samples: int = 1,
+    workers: int = 1,
 ) -> Iterator[Item]:
     """Yield each item with its necessity measured.
 
     The outcome is recorded, never used to drop the item. Which condition succeeded says
     something different in each case, and a reviewer needs to see it — the previous project
     kept 52 of 404 questions that failed at least one condition, deliberately.
+
+    ``workers`` items are measured at once. This is the most model calls any step makes —
+    three ablations, each answered and then checked against the gold — and every one of them
+    is independent of every other, so nothing about the result depends on the order they are
+    issued in. Items are still yielded in order.
     """
-    for item in items:
+
+    def measured(item: Item) -> Item:
+        """Measure one item, in place, and return it."""
         private_text = " ".join(texts.get(e.doc_id, "") for e in item.private_evidence)
         public_text = " ".join(texts.get(e.doc_id, "") for e in item.public_evidence)
         # One unmeasurable question costs its own measurement and nothing else. Step 6
@@ -134,4 +143,10 @@ def measure_items(
             item.necessity = measure(item, private_text, public_text, solver, judge, samples)
         except ModelUnavailable as exc:
             print(f"  unmeasured {item.item_id}: {exc}", file=sys.stderr)
-        yield item
+        return item
+
+    if workers <= 1:
+        yield from (measured(item) for item in items)
+        return
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        yield from pool.map(measured, items)

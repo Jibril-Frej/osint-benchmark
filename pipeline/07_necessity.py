@@ -36,6 +36,16 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="run with a scripted stand-in instead of a served model, to exercise the wiring",
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help=(
+            "how many questions to measure at once. This step makes more model calls than "
+            "any other and every one is independent, so one at a time wastes the server's "
+            "batching"
+        ),
+    )
     args = parser.parse_args(argv)
 
     solver_settings = settings.load("solver")
@@ -92,7 +102,11 @@ def main(argv: list[str] | None = None) -> int:
     samples = 1 if args.stub else judge_settings.samples
     sources = sources_for(items)
     print(f"evidence from: {', '.join(sources) or 'nothing cited'}")
-    measured = list(ablate.measure_items(items, evidence_texts(sources), solver, judge, samples))
+    measured = list(
+        ablate.measure_items(
+            items, evidence_texts(sources), solver, judge, samples, workers=args.workers
+        )
+    )
     output = paths.data_dir() / "items" / "measured.jsonl"
     write_records(
         output,
