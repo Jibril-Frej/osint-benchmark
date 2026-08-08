@@ -8,6 +8,8 @@ the release.
 
 from __future__ import annotations
 
+import json
+
 from osint_benchmark.generate import association, passage, resolution, typed
 from osint_benchmark.generate.association import Association
 from osint_benchmark.generate.resolution import Resolution
@@ -287,6 +289,40 @@ class TestPhraseCandidates:
         items = list(typed.phrase_candidates([self._candidate()], phraser, ("a desk officer",)))
 
         assert items[0].answer == "Emil Haraszti"
+
+    def test_concurrent_phrasing_produces_the_same_run_twice(self):
+        """The wording must not depend on how much hardware the run had.
+
+        The openings already used are prompt text, so workers appending to them as replies
+        land would make each run depend on which request finished first -- and a group size
+        tied to the worker count would make the same recipe produce different questions on a
+        bigger machine.
+        """
+        candidates = [
+            typed.Candidate(
+                item_id=f"cablegate:{n}|Haraszti|Q2",
+                question_type="resolution",
+                answer="Emil Haraszti",
+                gold_qid="Q2",
+                private_id=f"cablegate:{n}",
+                public_id="enwiki:Q2",
+                passage="Haraszti raised press intimidation.",
+                facts={"surface": "Haraszti", "bearers": "3"},
+            )
+            for n in range(6)
+        ]
+
+        # Echoes back what openings it was shown, so a different order is a different reply.
+        def phraser(prompt):
+            shown = prompt.split("reuse them: ")[-1].split("\n")[0].strip()
+            return json.dumps({"question": f"Who was involved given {shown}?"})
+
+        one = [i.question for i in typed.phrase_candidates(candidates, phraser, ("a", "b"))]
+        many = [
+            i.question for i in typed.phrase_candidates(candidates, phraser, ("a", "b"), workers=3)
+        ]
+
+        assert many == one
 
     def test_an_unparseable_reply_produces_no_item(self):
         """A malformed reply is a failure to write a question, not one to repair."""

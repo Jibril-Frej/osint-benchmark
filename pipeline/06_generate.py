@@ -150,6 +150,7 @@ def run_typed(args: argparse.Namespace, wanted: tuple[str, ...]) -> int:
             phrase.ASKERS,
             model=model,
             outcomes=outcomes,
+            workers=args.workers,
         )
     )
 
@@ -216,6 +217,15 @@ def main(argv: list[str] | None = None) -> int:
         help="with --types, how many candidates of each type to phrase",
     )
     parser.add_argument("--seed", type=int, default=0, help="which sample of candidates to take")
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help=(
+            "with --types, how many phrasing requests to have in flight. The server "
+            "batches continuously, so one at a time leaves the GPUs mostly idle"
+        ),
+    )
     args = parser.parse_args(argv)
     if args.draft and args.verify:
         raise SystemExit("--draft and --verify are the two passes; run them one at a time")

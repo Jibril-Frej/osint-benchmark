@@ -39,6 +39,7 @@ import json
 import sys
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 from osint_benchmark.generate import passage, resolution
@@ -59,6 +60,10 @@ OPENINGS_SHOWN = 12
 
 # Wikidata's class for a human being.
 HUMAN = "Q5"
+
+# How many candidates share one view of the openings already used. Fixed, so that the same
+# recipe produces the same questions whatever it is run on -- see phrase_candidates.
+CHUNK = 8
 
 
 @dataclass(frozen=True)
@@ -350,26 +355,55 @@ def phrase_candidates(
     askers: tuple[str, ...],
     model: str = "",
     outcomes: Counter | None = None,
+    workers: int = 1,
 ) -> Iterator[Item]:
     """Yield one item per candidate the phraser could write a question for.
 
     The asker is chosen by position rather than at random, so a rerun of the same candidates
     produces the same questions and the release fingerprint does not move for no reason.
+
+    ``workers`` requests are in flight at once. A reasoning model spends most of a minute
+    per question and the server batches continuously, so issuing one request at a time
+    leaves the GPUs mostly idle — the difference between an afternoon and an hour.
+
+    The openings list is prompt text, so letting workers append to it as replies land would
+    make the wording depend on which request finished first. Candidates are therefore taken
+    in fixed groups of :data:`CHUNK`: everyone in a group sees the same openings, and the
+    group's results extend the list in order afterwards. The group size is fixed rather than
+    equal to ``workers`` on purpose — tied to ``workers`` it would make the questions depend
+    on how much hardware the run had, and the same recipe would produce a different
+    benchmark on a bigger machine.
     """
     if outcomes is None:
         outcomes = Counter()
+    ordered = list(candidates)
     openings: list[str] = []
-    for index, candidate in enumerate(candidates):
-        asker = askers[index % len(askers)]
-        try:
-            question = ask(candidate, asker, openings, phraser)
-        except ModelUnavailable as exc:
-            outcomes["phraser_error"] += 1
-            print(f"  skipped {candidate.item_id}: {exc}", file=sys.stderr)
-            continue
-        if not question:
-            outcomes["unparseable_reply"] += 1
-            continue
-        openings.append(" ".join(question.split()[:4]))
-        outcomes["phrased"] += 1
-        yield to_item(candidate, question, asker, model)
+    for start in range(0, len(ordered), CHUNK):
+        chunk = list(enumerate(ordered[start : start + CHUNK], start))
+        seen = list(openings)
+
+        def one(pair: tuple[int, Candidate], used: list[str] = seen) -> str | None:
+            """Return the question for one candidate, or None if the phraser failed."""
+            index, candidate = pair
+            try:
+                return ask(candidate, askers[index % len(askers)], used, phraser)
+            except ModelUnavailable as exc:
+                print(f"  skipped {candidate.item_id}: {exc}", file=sys.stderr)
+                return None
+
+        if workers > 1:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                written = list(pool.map(one, chunk))
+        else:
+            written = [one(pair) for pair in chunk]
+
+        for (index, candidate), question in zip(chunk, written, strict=True):
+            if question is None:
+                outcomes["phraser_error"] += 1
+                continue
+            if not question:
+                outcomes["unparseable_reply"] += 1
+                continue
+            openings.append(" ".join(question.split()[:4]))
+            outcomes["phrased"] += 1
+            yield to_item(candidate, question, askers[index % len(askers)], model)
