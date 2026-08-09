@@ -433,3 +433,18 @@ class TestTopicalPipeline:
         self._corpus(tmp_path, monkeypatch)
 
         assert [r["doc_id"] for r in _step6().private_links()] == ["cablegate:1"]
+
+    def test_the_event_matcher_is_given_dated_documents(self, tmp_path, monkeypatch):
+        """A link row carries no date, and the matcher's whole signal is a date window.
+
+        Handed link rows directly it reported nothing, with no counter to say why: the
+        documents had all been filtered out before it saw them.
+        """
+        self._corpus(tmp_path, monkeypatch)
+        step6 = _step6()
+
+        dated = step6.dated_documents(step6.private_links())
+
+        assert [(r["doc_id"], r["date"].isoformat()) for r in dated] == [
+            ("cablegate:1", "2005-03-01")
+        ]

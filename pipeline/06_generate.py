@@ -190,6 +190,33 @@ def topical_pairs(
     return pairs
 
 
+def dated_documents(rows: list[dict]) -> list[dict]:
+    """Return the confidential link rows with the date of the document they annotate.
+
+    A link row is ``doc_id``, ``side`` and ``entities`` -- it does not carry a date, because
+    dates belong to the corpus. Handing the event matcher link rows directly leaves every
+    document undated, and since the matcher's whole signal is a window around that date, it
+    finds nothing and has nothing to report.
+    """
+    corpora: dict[str, dict[str, dict]] = {}
+    for row in rows:
+        name = refs.split(row["doc_id"])[0]
+        if name in corpora:
+            continue
+        output = base.output_path(get_source(name))
+        corpora[name] = (
+            {refs.ref(name, r["doc_id"]): r for r in read_jsonl(output)} if output.exists() else {}
+        )
+    out = []
+    for row in rows:
+        name = refs.split(row["doc_id"])[0]
+        record = corpora[name].get(row["doc_id"])
+        when = topical.parse_date(refs.record_date(name, record)) if record else None
+        if when:
+            out.append({**row, "date": when})
+    return out
+
+
 def dated_events(links: list[dict], sources: tuple[str, ...] = ("ucdp", "gdelt")) -> list[dict]:
     """Return the public event records that carry both a date and a linked entity.
 
@@ -265,13 +292,11 @@ def typed_candidates(
         print(f"chronology: {len(built)} intervals, {len(kept)} with both documents")
         candidates += kept[:per_type]
     if "event" in wanted:
-        dated = [
-            {**row, "date": topical.parse_date(refs.record_date(refs.split(row["doc_id"])[0], row))}
-            for row in rows
-        ]
+        dated = dated_documents(rows)
+        print(f"{len(dated)} of {len(rows)} confidential documents carry a date")
         matches = list(
             events.build(
-                [row for row in dated if row["date"]],
+                dated,
                 dated_events(links_for(("ucdp", "gdelt"))),
                 labels,
                 outcomes=outcomes,
