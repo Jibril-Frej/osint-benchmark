@@ -139,26 +139,35 @@ uv run python pipeline/01_sources.py cablegate dodis parliament ucdp wikipedia_i
 echo "=== 2/6 link ==="
 if [ -n "$LINKS" ]; then
   # Whatever link files the directory holds, rather than a fixed list: a run that adds a
-  # corpus should not need this script edited, and a missing one is visible in the count
-  # printed below.
+  # corpus should not need this script edited.
   cp "$LINKS"/*.jsonl "$OSINT_DATA/links/" 2>/dev/null || true
   cp "$LINKS"/*.provenance.json "$OSINT_DATA/links/" 2>/dev/null || true
   # The slice files live in the same directory on a reused run; they are not link files.
   rm -f "$OSINT_DATA/links/wikidata.jsonl" "$OSINT_DATA/links/articles.jsonl"
   echo "reused the link files in $LINKS"
-  # The slice is only valid for the link set it was fetched against, and --resume decides
-  # what to fetch by comparing the two. A mismatch is silent otherwise.
-  wc -l "$OSINT_DATA"/links/*.jsonl
-else
+fi
+# Per source rather than all-or-nothing. Supplying a link directory used to skip linking
+# entirely, so a corpus the directory happened not to contain was silently absent -- which
+# is how a run asking for the event type would have found no UCDP records to match against.
+if [ ! -f "$OSINT_DATA/links/cablegate.jsonl" ]; then
   uv run python pipeline/02_link.py --check --device cuda
   uv run python pipeline/02_link.py cablegate --index wikipedia_index --device cuda \
     --stride "$STRIDE"
+fi
+if [ ! -f "$OSINT_DATA/links/dodis.jsonl" ]; then
   # Catalogued by archivists: the entities come with the documents, so no model runs. The
   # names still have to be reconciled against Wikidata, which is network-bound, not GPU.
   uv run python pipeline/02_link.py dodis --index wikipedia_index
+fi
+if [ ! -f "$OSINT_DATA/links/ucdp.jsonl" ]; then
   # Tabular and country-keyed, so this is a lookup rather than a linker. It bridges nothing,
   # and the event type does not need it to: it matches on an anchor and a date window.
   uv run python pipeline/02_link.py ucdp --index wikipedia_index
+fi
+if [ ! -f "$OSINT_DATA/links/parliament.jsonl" ]; then
+  # Not linked here on purpose: mGENRE's mapping is 90 GB loaded and wants the job
+  # parliament.sbatch asks for. Supply its links through OSINT_LINKS.
+  echo "WARNING: no parliament links; the chronology and posture types will find no pairs" >&2
 fi
 wc -l "$OSINT_DATA"/links/*.jsonl
 keep
