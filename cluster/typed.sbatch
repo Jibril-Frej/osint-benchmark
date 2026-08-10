@@ -97,7 +97,9 @@ mkdir -p "$UV_INSTALL_DIR" "$NLTK_DATA" "$OUT" "$OSINT_RAW" "$HF_HOME" \
 SERVER_PID=""
 keep() {
   # After every stage, so a job killed at the time limit still leaves what it finished.
-  for path in links/cablegate.jsonl links/dodis.jsonl facts/wikidata.jsonl \
+  # Every link file, not a fixed pair: UCDP's was being rebuilt on each run because it was
+  # not on this list, and a corpus added later would have been too.
+  for path in links/*.jsonl facts/wikidata.jsonl \
               facts/articles.jsonl items/accepted.jsonl items/rejected.jsonl \
               items/measured.jsonl review.html; do
     cp -f "$OSINT_DATA/$path" "$OUT/$(basename "$path")" 2>/dev/null || true
