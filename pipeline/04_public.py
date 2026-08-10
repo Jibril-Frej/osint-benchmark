@@ -260,7 +260,10 @@ def main(argv: list[str] | None = None) -> int:
                 "artefact and is specified, not built here."
             ),
         ),
-        rows_in=len(pairs),
+        # Both halves of what is written, for the same reason as the slice above: this
+        # stream is the kept articles followed by the newly fetched ones. Counting only the
+        # second made rows_out exceed rows_in -- the identical mistake, one write later.
+        rows_in=len(pairs) + len(have_text),
     )
     print(f"articles: {written} written, {len(pairs)} newly fetched -> {text}")
 
