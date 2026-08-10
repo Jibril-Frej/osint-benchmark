@@ -13,7 +13,8 @@ Each gate exists because something got through without it:
   an intelligence requirement.
 * **not_a_bare_attribute** — birthplace, founding year, capital. 44 of the previous
   project's first 251 questions were two-hop attribute trivia; asking for an encyclopaedia
-  field makes the private document a lookup key rather than evidence.
+  field makes the private document a lookup key rather than evidence. An item that withholds
+  its subjects is exempt, because there is then nothing to look the field off.
 * **answer_is_substantive** — a one-character or empty answer is a parsing failure wearing
   an answer's clothes.
 * **withholds_what_it_was_told_to** — some questions are only necessary because they
@@ -113,7 +114,25 @@ def no_source_attribution(item: Item) -> bool:
 
 
 def not_a_bare_attribute(item: Item) -> bool:
-    """The question does not ask for an encyclopaedia field."""
+    """The question does not ask for an encyclopaedia field off a subject it names.
+
+    Both halves matter. The failure this catches is the *lookup key*: the confidential
+    document identifies an entity, and the answer is then a field anyone could read off it —
+    44 of the previous project's first 251 questions were that shape. What makes it a defect
+    is that the question names, or lets a solver name, the thing to look up.
+
+    A question that withholds its subjects cannot have that shape, because there is nothing
+    to look the attribute off. So an item declaring ``withheld`` — and a separate gate checks
+    it kept that promise — is exempt. This is deliberately a property of the item rather than
+    of its type: per-type gates are what let the previous project's dependency check run on
+    one stream and not the other, and 82% of the resulting set had a decorative private hop.
+
+    Measured on the run that prompted this: 102 association questions whose answer was a
+    political party passed, and 19 identical ones were rejected for saying "political party"
+    rather than "organization". That is a filter on synonyms, not on quality.
+    """
+    if item.provenance.get("withheld"):
+        return True
     lowered = item.question.lower()
     return not any(phrase in lowered for phrase in ATTRIBUTE_DENYLIST)
 

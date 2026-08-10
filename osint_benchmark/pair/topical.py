@@ -74,9 +74,15 @@ CROSSWALK: dict[str, frozenset[str]] = {
 # A cable reports on what is in front of it, and a parliamentary item takes months to move.
 WINDOW_DAYS = 90
 
-# Which embassy's reporting may be joined to this parliament. Cablegate's origin column
-# names the post, and the previous project keys on it exactly this way.
-ORIGINS = frozenset({"bern"})
+# Which posts' reporting may be joined to this parliament. Cablegate's origin column names
+# the post, and the previous project keys on it exactly this way -- though only on Bern.
+#
+# Geneva is included here as a deliberate widening: the missions there report on the UN and
+# WTO business the Swiss parliament also debates, and there are 981 of their cables against
+# 255 from Bern, so the private side of this join is roughly five times larger for it. The
+# cost is that a mission to international organisations is not straightforwardly reporting
+# on Swiss politics, and pairs that rest on that will have to be judged rather than assumed.
+ORIGINS = frozenset({"bern", "geneva"})
 
 # An entity in more than this share of the confidential corpus carries no topical signal:
 # "Switzerland" links a branding postulate to every Swiss cable there is.

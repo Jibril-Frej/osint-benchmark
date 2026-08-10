@@ -547,3 +547,51 @@ class TestRoundTrip:
 
         assert loaded.private_evidence[0].offsets == (400, 1100)
         assert loaded.provenance["gold"].startswith("computed")
+
+
+class TestAttributeGateExemption:
+    """A question with no named subject cannot be an attribute lookup."""
+
+    def _item(self, question, withheld=""):
+        """Return an item asking the given question."""
+        from osint_benchmark.generate.item import Evidence, Item
+
+        return Item(
+            item_id="x",
+            question_type="association",
+            question=question,
+            answer="Bloc Québécois",
+            evidence=[
+                Evidence(doc_id="cablegate:1", source="cablegate", side="private"),
+                Evidence(doc_id="enwiki:Q7", source="wikipedia", side="public"),
+            ],
+            provenance={"withheld": withheld} if withheld else {},
+        )
+
+    def test_an_item_that_withholds_its_subjects_may_ask_for_a_party(self):
+        """There is no entity to look the field off: the pair is the private document's."""
+        from osint_benchmark.generate import gates
+
+        item = self._item(
+            "What political party do the two Quebec MPs described above both represent?",
+            withheld="Anna Meier; Beat Weber",
+        )
+
+        assert gates.run(item)["not_a_bare_attribute"] is True
+
+    def test_an_item_that_names_its_subject_still_may_not(self):
+        """The lookup-key failure the denylist exists for is unchanged."""
+        from osint_benchmark.generate import gates
+
+        item = self._item("What is the capital of the country that supplier was based in?")
+
+        assert gates.run(item)["not_a_bare_attribute"] is False
+
+    def test_the_exemption_is_a_property_of_the_item_not_of_its_type(self):
+        """Per-type gates are how a check comes to run on one stream and not the other."""
+        from osint_benchmark.generate import gates
+
+        item = self._item("What political party do they belong to?")
+        item.question_type = "association"
+
+        assert gates.run(item)["not_a_bare_attribute"] is False
