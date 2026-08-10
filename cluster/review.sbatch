@@ -19,7 +19,12 @@
 #     --export=ALL,OSINT_ITEMS="$HOME/a/measured.jsonl $HOME/b/measured.jsonl" \
 #     cluster/review.sbatch
 #
-#   OSINT_ITEMS   space-separated measured.jsonl files to merge, in order
+#   OSINT_ITEMS      space-separated measured.jsonl files to merge, in order
+#   OSINT_CALIBRATE  also render the calibration page over this many questions. It asks a
+#                    different and prior question from the review page -- not "is this
+#                    question good" but "can the pipeline's own verdicts be believed" --
+#                    and neither the judge nor the ablations has ever been checked against
+#                    a person.
 set -euo pipefail
 
 ITEMS="${OSINT_ITEMS:?set OSINT_ITEMS to one or more measured.jsonl paths}"
@@ -37,7 +42,7 @@ export OSINT_DODIS_OCR="$HOME/dodis_ocr" OSINT_DODIS_NT="$HOME/dodis-lod.nt"
 echo "node   $(hostname)"
 echo "items  $ITEMS"
 mkdir -p "$UV_INSTALL_DIR" "$OUT" "$OSINT_RAW" "$OSINT_DATA/items"
-trap 'cp -f "$OSINT_DATA/review.html" "$OUT/" 2>/dev/null || true; rm -rf "$WORK"; echo "results in $OUT"' EXIT
+trap 'cp -f "$OSINT_DATA"/review.html "$OSINT_DATA"/calibration.html "$OUT/" 2>/dev/null || true; rm -rf "$WORK"; echo "results in $OUT"' EXIT
 
 echo "=== installing uv ==="
 curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null 2>&1
@@ -71,6 +76,11 @@ uv run python pipeline/01_sources.py cablegate dodis parliament ucdp
 echo "=== 2/2 review page ==="
 uv run python pipeline/08_review.py
 cp -f "$OSINT_DATA/review.html" "$OUT/" 2>/dev/null || true
+if [ -n "${OSINT_CALIBRATE:-}" ]; then
+  echo "=== calibration page ==="
+  uv run python pipeline/08_review.py --calibrate "$OSINT_CALIBRATE"
+  cp -f "$OSINT_DATA/calibration.html" "$OUT/" 2>/dev/null || true
+fi
 
 uv run python - <<'PY'
 import collections, json, os, pathlib
