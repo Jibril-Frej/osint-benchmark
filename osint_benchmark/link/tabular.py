@@ -98,18 +98,29 @@ def link_records(
     side: str,
     entity_set: frozenset[str] | set[str],
     resolve: Callable[..., dict[str, list[str]]] = by_label,
+    reopen: Callable[[], Iterable[dict]] | None = None,
 ) -> Iterator[dict]:
     """Yield one link row per record, resolving its names in a single batched pass.
 
     Records are read into memory because the names have to be collected before they can be
-    resolved in batches — one query per record would be thousands of round trips. These
-    sources are the small ones, so that is affordable; the corpora that are not small carry
-    prose and go through a linker instead.
+    resolved in batches — one query per record would be thousands of round trips. Most of
+    these sources are small enough for that; the corpora that are not carry prose and go
+    through a linker instead.
+
+    ``reopen`` is for the one that is neither. GDELT is 91.6M events over 6.7 GB of gzip and
+    roughly sixty fields each, so holding it costs more memory than the node has. Given a way
+    to read the records a second time, this makes two streaming passes instead — one to
+    collect the distinct names, one to emit — and never holds more than the vocabulary, which
+    is a few tens of thousands of strings either way.
     """
-    rows = list(records)
     fields = NAME_FIELDS.get(source, ("name",))
     min_words = MIN_NAME_WORDS.get(source, 1)
-    wanted = {name for row in rows for name in names_in(row, fields, min_words)}
+    if reopen is None:
+        rows: Iterable[dict] = list(records)
+        wanted = {name for row in rows for name in names_in(row, fields, min_words)}
+    else:
+        wanted = {name for row in records for name in names_in(row, fields, min_words)}
+        rows = reopen()
     resolved = resolve(sorted(wanted), KINDS.get(source, ())) if wanted else {}
 
     for row in rows:

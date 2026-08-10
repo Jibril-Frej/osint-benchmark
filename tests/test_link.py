@@ -520,3 +520,57 @@ class TestParliamentDate:
         from osint_benchmark.sources import refs
 
         assert refs.record_date("parliament", {"BusinessStatusDate": "1996-01-01"}) == "1996-01-01"
+
+
+class TestStreamedLinking:
+    """The corpora too large to hold in memory."""
+
+    def _records(self):
+        """Return two tabular records naming one entity each."""
+        return [
+            {"doc_id": "1", "actor1_name": "SWITZERLAND", "actor2_name": ""},
+            {"doc_id": "2", "actor1_name": "IRAN", "actor2_name": ""},
+        ]
+
+    def test_two_passes_give_the_same_rows_as_one(self, monkeypatch):
+        """Streaming must not change what is linked, only how much is held."""
+        from osint_benchmark.link import tabular
+
+        resolved = {"SWITZERLAND": ["Q39"], "IRAN": ["Q794"]}
+        held = list(
+            tabular.link_records(
+                self._records(), "gdelt", "public", {"Q39", "Q794"}, lambda n, k: resolved
+            )
+        )
+        streamed = list(
+            tabular.link_records(
+                iter(self._records()),
+                "gdelt",
+                "public",
+                {"Q39", "Q794"},
+                lambda n, k: resolved,
+                reopen=self._records,
+            )
+        )
+
+        assert streamed == held
+        assert [e["qid"] for row in streamed for e in row["entities"]] == ["Q39", "Q794"]
+
+    def test_the_records_are_never_materialised_when_streaming(self):
+        """The whole point: 91.6M events of sixty fields do not fit in a node."""
+        from osint_benchmark.link import tabular
+
+        seen = []
+
+        def counted():
+            for row in self._records():
+                seen.append(row["doc_id"])
+                yield row
+
+        list(
+            tabular.link_records(
+                counted(), "gdelt", "public", set(), lambda n, k: {}, reopen=counted
+            )
+        )
+
+        assert seen == ["1", "2", "1", "2"]  # read twice, held never

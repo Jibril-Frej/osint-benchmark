@@ -40,6 +40,8 @@ MULTILINGUAL = {"parliament": "public"}
 # Catalogued by archivists: the entities come with the documents, so no linker runs.
 CURATED = {"dodis": "private"}
 TABULAR = {"sanctions": "public", "ucdp": "public", "gdelt": "public"}
+# Read twice and never held: too large to materialise. See tabular.link_records.
+STREAMED = frozenset({"gdelt"})
 SIDES = {**PROSE, **MULTILINGUAL, **CURATED, **TABULAR}
 
 
@@ -286,12 +288,17 @@ def main(argv: list[str] | None = None) -> int:
                 how = "exact name reconciliation against the live Wikidata endpoint"
                 if use_aliases:
                     how += ", matching aliases as well as article titles"
+                # A second reader for the corpora too large to hold. GDELT is 91.6M events
+                # over 6.7 GB of gzip; the linker then makes two streaming passes instead of
+                # materialising them, and holds only the vocabulary.
+                large = name in STREAMED
                 rows_iter = tabular.link_records(
                     records,
                     name,
                     TABULAR[name],
                     universe,
                     resolve=partial(reconcile.by_label, aliases=use_aliases),
+                    reopen=(lambda n=name: selected(n)) if large else None,
                 )
 
         output = paths.data_dir() / "links" / f"{name}.jsonl"
