@@ -164,6 +164,7 @@ def main(argv: list[str] | None = None) -> int:
         failures.append(f"{key}: {exc}")
 
     kept, have = already("wikidata.jsonl") if args.resume else ([], set())
+    extra_asked: list[str] = []
     if kept:
         print(f"resuming: {len(kept)} entities already fetched")
     # Held rather than streamed to disk: the second hop is chosen from what the first one
@@ -180,6 +181,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     if args.neighbours:
         extra = [qid for qid in neighbours_of(records, association.RELATIONAL) if qid not in have]
+        extra_asked = extra
         print(f"{len(extra)} entities reachable through a relational predicate")
         records += list(
             wikidata.fetch_entities(
@@ -210,14 +212,25 @@ def main(argv: list[str] | None = None) -> int:
             kind="derived",
             note="Every record carries the lastrevid it was read at; Wikidata is live.",
         ),
-        rows_in=len(qids),
+        # Everything a record could have come from: the entities asked for this run, plus
+        # the ones an earlier run already fetched. Counting only the former made rows_out
+        # exceed rows_in and failed the provenance check -- correctly, because a resumed run
+        # carries records for entities the new link set no longer asks about (the previous
+        # run's second hop), and they are inputs too.
+        rows_in=len(set(qids) | have),
     )
-    print(f"wikidata: {written} of {len(qids)} entities -> {facts}")
+    print(f"wikidata: {written} written, {len(wanted) + len(extra_asked)} newly fetched -> {facts}")
 
     have_text, have_articles = already("articles.jsonl") if args.resume else ([], set())
     if have_text:
         print(f"resuming: {len(have_text)} articles already fetched")
-    pairs = [pair for pair in titles_for(qids, args.index) if pair[0] not in have_articles]
+    # Titles for everything on disk, not only for what this run asked about: a resumed run's
+    # kept records are as entitled to an article as the ones it fetched.
+    pairs = [
+        pair
+        for pair in titles_for(sorted(set(qids) | have), args.index)
+        if pair[0] not in have_articles
+    ]
     text = paths.data_dir() / "facts" / "articles.jsonl"
     written = write_records(
         text,

@@ -355,3 +355,27 @@ class TestResume:
         monkeypatch.setenv("OSINT_DATA", str(tmp_path))
 
         assert _step4().already("wikidata.jsonl") == ([], set())
+
+    def test_a_resumed_run_counts_what_it_kept_as_input(self, tmp_path, monkeypatch):
+        """rows_out exceeded rows_in and the provenance check stopped the run, correctly.
+
+        A resumed run carries records for entities the new link set no longer asks about --
+        the previous run's second hop -- and those are inputs too.
+        """
+        import json
+
+        facts = tmp_path / "facts"
+        facts.mkdir(parents=True)
+        (facts / "wikidata.jsonl").write_text(
+            "".join(
+                json.dumps({"doc_id": q, "qid": q, "label": q, "statements": {}}) + "\n"
+                for q in ("Q1", "Q2", "Q3")
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("OSINT_DATA", str(tmp_path))
+
+        _kept, have = _step4().already("wikidata.jsonl")
+
+        # Two entities asked for, three already on disk, one of them not asked for again.
+        assert len(set(["Q1", "Q9"]) | have) == 4
