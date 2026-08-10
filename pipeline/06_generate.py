@@ -141,12 +141,20 @@ def topical_pairs(
                 documents[name][refs.ref(name, row["doc_id"])] = row
 
     cables = []
+    skipped = 0
     for row in links:
         if row.get("side") != "private" or not row["doc_id"].startswith("cablegate:"):
             continue
         record = documents["cablegate"].get(row["doc_id"])
         when = topical.parse_date(record.get("date") if record else None)
         if not record or not when:
+            continue
+        # Only the post that reports on this parliament. Without it the join pairs an
+        # embassy on the other side of the world with a Swiss motion on the strength of a
+        # shared country name, which is what made 71% of the posture questions come back
+        # "not enough evidence".
+        if not topical.reports_on((record.get("meta") or {}).get("origin", "")):
+            skipped += 1
             continue
         cables.append(
             {
@@ -179,7 +187,10 @@ def topical_pairs(
             }
         )
 
-    print(f"{len(cables)} dated cables, {len(business)} dated and categorised business items")
+    print(
+        f"{len(cables)} dated cables from {', '.join(sorted(topical.ORIGINS))} "
+        f"({skipped} from other posts), {len(business)} dated and categorised business items"
+    )
     pairs = list(
         topical.join(cables, business, labels, places, max_share=max_share, outcomes=outcomes)
     )

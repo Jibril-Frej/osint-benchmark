@@ -15,6 +15,15 @@ German, so two language-independent signals do the work instead:
   *identifier* rather than a shared spelling. Matching English labels inside German text
   bridged 113 entities; matching QIDs bridges the 2,091 the two corpora actually share.
 
+**The confidential side is scoped to the embassy that reports on this parliament.** The
+previous project's join reads a Bern-only slice of the cables, keyed on the origin column,
+and this is the condition whose absence makes the whole join meaningless rather than merely
+noisy: over all embassies, a cable from Cairo mentioning Iran pairs with a Swiss motion
+mentioning Iran ninety days later, and the only thing joining them is the name of a country.
+Measured on a run without it: 71% of the resulting posture questions were adjudicated "not
+enough evidence" -- the model saying, correctly, that the two documents are not about the
+same thing.
+
 **A shared entity is a weak signal on its own**, and the previous project measured why:
 matching on QIDs doubled the pair count and diluted it, because a cable about WTO
 negotiations and a motion on registered partnerships share "European Union" and nothing
@@ -64,6 +73,10 @@ CROSSWALK: dict[str, frozenset[str]] = {
 
 # A cable reports on what is in front of it, and a parliamentary item takes months to move.
 WINDOW_DAYS = 90
+
+# Which embassy's reporting may be joined to this parliament. Cablegate's origin column
+# names the post, and the previous project keys on it exactly this way.
+ORIGINS = frozenset({"bern"})
 
 # An entity in more than this share of the confidential corpus carries no topical signal:
 # "Switzerland" links a branding postulate to every Swiss cable there is.
@@ -131,19 +144,30 @@ def generic(
     return {qid for qid, seen in counts.items() if seen > ceiling and qid in labels}
 
 
+def reports_on(origin: str, origins: frozenset[str] = ORIGINS) -> bool:
+    """Return whether a confidential document comes from a post this join covers."""
+    lowered = (origin or "").lower()
+    return any(name in lowered for name in origins)
+
+
 def focused(pair: dict, places: set[str]) -> bool:
     """Return whether a pair's shared entities amount to a topical link.
 
-    The condition the previous project arrived at after measuring that entity overlap alone
-    doubled the pairs and diluted them. Either the item's *title* names a shared entity — so
-    the item is about it, not merely adjacent to it — or there is more than one shared entity
-    and at least one is not a place, since two documents sharing only countries share only a
-    map reference.
+    Two documents sharing only places share only a map reference, so a pair with no
+    substantive shared entity is never focused — *including* when one of those places is in
+    the item's title. That exemption is what let a motion titled "Situation in Iran" join any
+    cable naming Iran: 83 of 150 chronology items rested on a single shared country, and
+    every one of them asked how many days separated two unrelated events.
+
+    Given something substantive in common, either the item's title names it — so the item is
+    about it, not merely adjacent to it — or the pair shares more than one entity.
     """
-    if pair["shared_in_title"]:
-        return True
     shared = pair["shared_qids"]
-    return len(shared) > 1 and any(qid not in places for qid in shared)
+    substantive = [qid for qid in shared if qid not in places]
+    if not substantive:
+        return False
+    in_title = [qid for qid in pair.get("shared_in_title_qids", ()) if qid not in places]
+    return bool(in_title) or len(shared) > 1
 
 
 def by_month(items: Iterable[dict]) -> dict[tuple[int, int], list[dict]]:
@@ -230,6 +254,7 @@ def join(
                 "shared_qids": shared[:4],
                 "shared_entities": [labels.get(qid, qid) for qid in shared[:4]],
                 "shared_in_title": [labels.get(qid, qid) for qid in in_title[:4]],
+                "shared_in_title_qids": in_title[:4],
                 "has_response": item.get("has_response", False),
                 "days_apart": abs((item["date"] - cable["date"]).days),
             }

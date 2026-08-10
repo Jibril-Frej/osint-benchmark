@@ -89,6 +89,15 @@ def main(argv: list[str] | None = None) -> int:
             "country -- a biased slice that bridges nothing"
         ),
     )
+    parser.add_argument(
+        "--origin",
+        help=(
+            "link only the documents whose origin contains this, case-insensitively. The "
+            "cable-parliament join needs the post that reports on that parliament, and there "
+            "are 255 Embassy Bern cables in 251,287: a stride sample finds five of them, so "
+            "the slice that join needs has to be selected rather than sampled"
+        ),
+    )
     parser.add_argument("--device", default="cpu")
     parser.add_argument(
         "--dictionary",
@@ -195,8 +204,15 @@ def main(argv: list[str] | None = None) -> int:
         also, also_method = title_linker()
 
     def selected(name: str):
-        """Return the records of one source, after --stride and --limit."""
+        """Return the records of one source, after --origin, --stride and --limit."""
         records = read_jsonl(base.output_path(get_source(name)))
+        if args.origin:
+            wanted = args.origin.lower()
+            records = (
+                row
+                for row in records
+                if wanted in str((row.get("meta") or {}).get("origin", "")).lower()
+            )
         if args.stride > 1:
             records = (row for i, row in enumerate(records) if i % args.stride == 0)
         if args.limit:

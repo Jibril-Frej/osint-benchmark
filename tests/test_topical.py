@@ -111,6 +111,26 @@ class TestFocused:
         assert pairs[0]["shared_in_title"] == ["Swissair"]
         assert pairs[0]["focused"]
 
+    def test_a_place_in_the_title_does_not_focus_a_pair(self):
+        """A motion titled "Situation in Iran" otherwise joins any cable naming Iran.
+
+        83 of 150 chronology items rested on one shared country, and every one asked how
+        many days separated two unrelated events.
+        """
+        labels = {"Q3": "Iran"}
+        pairs = list(
+            topical.join(
+                [_cable(qids=("Q3",))],
+                [_item(qids=("Q3",), title="Lage in Iran")],
+                labels,
+                {"Q3"},
+                max_share=1.0,
+            )
+        )
+
+        assert pairs[0]["shared_in_title"] == ["Iran"]
+        assert not pairs[0]["focused"]
+
     def test_two_shared_countries_are_not_a_link(self):
         """Two documents sharing only countries share only a map reference."""
         pairs = list(
@@ -153,6 +173,22 @@ class TestFocused:
         )
 
         assert pairs[0]["shared_in_title"] == []
+
+
+class TestScope:
+    """Only the post that reports on this parliament."""
+
+    def test_the_bern_embassy_is_in_scope(self):
+        """The origin column names the post, which is what the previous project keys on."""
+        assert topical.reports_on("Embassy Bern")
+
+    def test_another_embassy_is_not(self):
+        """A Cairo cable and a Swiss motion share a country name and nothing else."""
+        assert not topical.reports_on("Embassy Cairo")
+
+    def test_a_cable_with_no_origin_is_not_in_scope(self):
+        """Unknown provenance is not evidence of Swiss provenance."""
+        assert not topical.reports_on("")
 
 
 class TestChronology:
