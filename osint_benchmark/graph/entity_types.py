@@ -46,6 +46,17 @@ ORGANISATION = "Q43229"
 # organisation, so testing only for organisations admitted all twenty-six of them.
 PLACE = "Q2221906"
 
+# A second ancestor, because the first one misses continents. Asia is an instance of
+# "continent" and of "geographic region", and neither descends from "geographic location" --
+# so it came through as a substantive shared entity and joined a cable about North Korean
+# nuclear tests to a parliamentary session on climate protection, on the strength of sharing
+# a landmass. "Geographic region" covers everything "geographic location" does and continents
+# besides, and still excludes people.
+REGION = "Q82794"
+
+# Every ancestor whose descendants are somewhere rather than something.
+PLACE_ANCESTORS = (PLACE, REGION)
+
 # Kept as documentation of the kinds this filter is meant to admit. Not a gate: an
 # allowlist cannot anticipate the tail of organisation types, and excluding what it failed
 # to list dropped Associated Press. What decides is descent from ORGANISATION.
@@ -112,13 +123,19 @@ def descendants_of(classes: Iterable[str], ancestor: str, query=None) -> set[str
     return {row["c"]["value"].rsplit("/", 1)[-1] for row in rows}
 
 
+def place_classes(classes: Iterable[str], query=None) -> set[str]:
+    """Return which of these classes describe somewhere rather than something."""
+    wanted = sorted({c for c in classes if c})
+    found: set[str] = set()
+    for ancestor in PLACE_ANCESTORS:
+        found |= descendants_of(wanted, ancestor, query)
+    return found
+
+
 def kinds_present(classes: Iterable[str], query=None) -> tuple[set[str], set[str]]:
     """Return ``(organisation classes, place classes)`` among the ones given."""
     classes = sorted({c for c in classes if c})
-    return (
-        descendants_of(classes, ORGANISATION, query),
-        descendants_of(classes, PLACE, query),
-    )
+    return (descendants_of(classes, ORGANISATION, query), place_classes(classes, query))
 
 
 def classify(

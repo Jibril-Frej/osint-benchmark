@@ -124,7 +124,7 @@ def topical_pairs(
     # the *classes* present are asked about once and every entity checked against those.
     # Naming the ancestor directly finds almost nothing, which is a silent way to make every
     # pair look focused.
-    place_classes = entity_types.descendants_of(entity_types.classes_in(facts), entity_types.PLACE)
+    place_classes = entity_types.place_classes(entity_types.classes_in(facts))
     places = {
         row["qid"]
         for row in facts

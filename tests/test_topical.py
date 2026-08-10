@@ -484,3 +484,29 @@ class TestTopicalPipeline:
         assert [(r["doc_id"], r["date"].isoformat()) for r in dated] == [
             ("cablegate:1", "2005-03-01")
         ]
+
+
+class TestPlaceClasses:
+    """Somewhere, not something — and continents are somewhere."""
+
+    def test_a_continent_counts_as_a_place(self):
+        """Asia joined a North Korea cable to a climate motion by being 'substantive'.
+
+        It is an instance of continent and of geographic region, and neither descends from
+        geographic location, so the single ancestor missed it.
+        """
+        from osint_benchmark.graph import entity_types
+
+        def query(sparql):
+            # Continent descends from geographic region only; city from both.
+            if entity_types.REGION in sparql:
+                return [{"c": {"value": "http://www.wikidata.org/entity/Q5107"}}]
+            return []
+
+        assert entity_types.place_classes(["Q5107"], query) == {"Q5107"}
+
+    def test_a_person_is_not_a_place_under_either_ancestor(self):
+        """The widening must not start swallowing the entities questions are built on."""
+        from osint_benchmark.graph import entity_types
+
+        assert entity_types.place_classes(["Q5"], lambda sparql: []) == set()
