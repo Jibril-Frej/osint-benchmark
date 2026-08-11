@@ -64,6 +64,16 @@ SOURCE_ATTRIBUTION = (
     "two documents",
     "the report",
     "the record",
+    "the records",
+    # Plurals and qualifiers, because the singular list let through "Did the public records
+    # from Iraq show increased resistance activity" -- which points a solver at the evidence
+    # exactly as squarely as "the record" does, and is what the event prompt's own wording
+    # invites.
+    "public record",
+    "public records",
+    "the public record",
+    "the event record",
+    "event records",
     "the article",
     "the passage",
     "the text",

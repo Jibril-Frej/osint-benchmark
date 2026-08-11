@@ -102,8 +102,13 @@ paint();
 
 
 def _flag(label: str, ok: bool) -> str:
-    """Return one coloured flag."""
-    return f'<span class="flag {"good" if ok else "bad"}">{html.escape(label)}</span>'
+    """Return one flag whose text says what it means.
+
+    Colour alone did not: a necessity flag read "public-only answerable" whether the solver
+    could answer or not, so two opposite outcomes were the same words in different shades.
+    """
+    mark = "\u2713" if ok else "\u2717"
+    return f'<span class="flag {"good" if ok else "bad"}">{mark} {html.escape(label)}</span>'
 
 
 def _cited(evidence: list, texts: dict[str, str]) -> str:
@@ -150,7 +155,7 @@ def _article(item: Item, texts: dict[str, str]) -> str:
     public = _cited(item.public_evidence, texts)
     gates = "".join(_flag(name, ok) for name, ok in sorted(item.gates.items()))
     necessity = "".join(
-        _flag(f"{name} answerable", not value)
+        _flag(f"{name}: {'ANSWERED it' if value else 'could not answer'}", not value)
         for name, value in (
             ("closed-book", item.necessity.closed_book),
             ("public-only", item.necessity.public_only),
@@ -175,6 +180,36 @@ def _article(item: Item, texts: dict[str, str]) -> str:
     <button onclick="decide('{html.escape(item.item_id)}','drop')">Drop</button>
   </div>
 </article>"""
+
+
+LEGEND = (
+    ("two_sided", "cites at least one confidential and one public document"),
+    ("answer_not_in_question", "the question does not contain its own answer"),
+    ("no_source_attribution", "asks about the world, not about a document"),
+    ("not_a_bare_attribute", "does not ask for an encyclopaedia field off a named subject"),
+    ("answer_is_substantive", "the answer is long enough to be one"),
+    ("withholds_what_it_was_told_to", "does not name the people it was meant to describe"),
+)
+
+
+def _legend() -> str:
+    """Return what each flag means: the gate names are the code's words, not a reader's."""
+    gates = "".join(
+        f"<li><code>{html.escape(name)}</code> \u2014 {html.escape(meaning)}</li>"
+        for name, meaning in LEGEND
+    )
+    return (
+        '<details class="models"><summary><strong>What the flags mean</strong></summary>'
+        "<p>A tick is a check the question passed, a cross one it failed. Every question "
+        "here passed every gate; they are shown so you can see what was and was not "
+        "checked.</p>"
+        f"<ul>{gates}</ul>"
+        "<p>The three <strong>necessity</strong> flags are a measurement rather than a gate. "
+        "Each says whether a solver given only that much evidence produced the right answer, "
+        "so <em>could not answer</em> is the good outcome. A question whose public-only or "
+        "private-only run <em>ANSWERED it</em> did not need both documents, and is kept "
+        "visible rather than hidden.</p></details>"
+    )
 
 
 def _filters(items: list[Item]) -> str:
@@ -222,6 +257,7 @@ def render(items: Iterable[Item], texts: dict[str, str], note: str = "") -> str:
 </header>
 <main>
 {_models(note)}
+{_legend()}
 {_filters(listed)}
 {body}
 </main>

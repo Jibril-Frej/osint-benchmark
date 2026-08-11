@@ -178,14 +178,21 @@ class TestReviewPage:
         assert "&lt;script&gt;" in html
 
     def test_necessity_flags_are_shown_when_measured(self):
-        """Shown rather than filtered on: which condition succeeded is a judgement."""
-        item = _item(necessity=Necessity(closed_book=True, public_only=False, private_only=False))
+        """Shown rather than filtered on: which condition succeeded is a judgement.
 
-        assert "closed-book answerable" in page.render([item], {})
+        The wording has to carry the direction. It used to read "closed-book answerable"
+        whichever way the run went, so the two opposite outcomes were the same words in
+        different colours.
+        """
+        item = _item(necessity=Necessity(closed_book=True, public_only=False, private_only=False))
+        html = page.render([item], {})
+
+        assert "closed-book: ANSWERED it" in html
+        assert "public-only: could not answer" in html
 
     def test_an_unmeasured_item_shows_no_necessity_flags(self):
         """Absent is not the same as passed."""
-        assert "closed-book answerable" not in page.render([_item()], {})
+        assert "closed-book:" not in page.render([_item()], {})
 
 
 class TestFreeze:

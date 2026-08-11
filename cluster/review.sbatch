@@ -20,6 +20,14 @@
 #     cluster/review.sbatch
 #
 #   OSINT_ITEMS      space-separated measured.jsonl files to merge, in order
+#   OSINT_MODELS     path to a FILE holding what produced them, shown at the top of the
+#                    page. A path and not the text: sbatch --export splits its value on
+#                    commas, so a sentence passed directly arrives truncated at the first
+#                    one -- which is how the page came to say only "phrased by Qwen/QwQ-32B".
+#   OSINT_FACTS      a directory holding articles.jsonl. The association and resolution
+#                    types cite an entity's Wikipedia lead as their public evidence, and
+#                    without it 296 of 515 questions showed "(not available)" on the public
+#                    side while the page still looked complete.
 #   OSINT_CALIBRATE  also render the calibration page over this many questions. It asks a
 #                    different and prior question from the review page -- not "is this
 #                    question good" but "can the pipeline's own verdicts be believed" --
@@ -67,8 +75,38 @@ out = pathlib.Path(os.environ["OSINT_DATA"], "items", "measured.jsonl")
 with out.open("w", encoding="utf-8") as fh:
     for row in seen.values():
         fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+# The page shows which models produced the questions, and reads that from the sidecar. A
+# merge of several runs has no single one, so it is written here from what the runs declared
+# -- without it the page silently omits the block and looks complete.
+note_file = os.environ.get("OSINT_MODELS", "")
+note = pathlib.Path(note_file).read_text(encoding="utf-8").strip() if note_file else ""
+if note:
+    pathlib.Path(str(out) + ".provenance.json").write_text(
+        json.dumps(
+            {
+                "output": str(out),
+                "kind": "derived",
+                "source": os.environ.get("OSINT_ITEMS", ""),
+                "source_fields": ["item_id", "question", "answer", "necessity"],
+                "kept": {"item_id": "item_id"},
+                "dropped": {},
+                "rows_in": kept,
+                "rows_out": len(seen),
+                "note": note,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
 print(f"{kept} questions in, {len(seen)} distinct -> {out}")
 PY
+
+if [ -n "${OSINT_FACTS:-}" ]; then
+  mkdir -p "$OSINT_DATA/facts"
+  cp "$OSINT_FACTS/articles.jsonl" "$OSINT_DATA/facts/" 2>/dev/null \
+    && echo "article leads: $(wc -l < "$OSINT_DATA/facts/articles.jsonl")" \
+    || echo "WARNING: no articles.jsonl in $OSINT_FACTS; enwiki evidence will be missing" >&2
+fi
 
 echo "=== 1/2 sources (the page shows the documents) ==="
 uv run python pipeline/01_sources.py cablegate dodis parliament ucdp
