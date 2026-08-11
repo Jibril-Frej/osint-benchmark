@@ -35,7 +35,8 @@
 #                       link files it was fetched for -- a wider link set needs a wider
 #                       slice, and a narrower one carries entities no document names.
 #   OSINT_PER_TYPE      candidates of each type to phrase (default 150)
-#   OSINT_TYPES         which types to build (default: all five)
+#   OSINT_TYPES         which types to build; "default" is every type still in the
+#                       benchmark, which is all of them but chronology
 #   OSINT_GEN_MODEL     the phraser (default Qwen/QwQ-32B)
 #   OSINT_WORKERS       requests in flight at once (default 8). The server batches
 #                       continuously; one at a time leaves both GPUs mostly idle.
@@ -52,7 +53,7 @@ set -euo pipefail
 
 STRIDE="${OSINT_LINK_STRIDE:-3}"
 PER_TYPE="${OSINT_PER_TYPE:-150}"
-TYPES="${OSINT_TYPES:-association,resolution,chronology,posture,event}"
+TYPES="${OSINT_TYPES:-default}"
 MODEL="${OSINT_GEN_MODEL:-Qwen/QwQ-32B}"
 WORKERS="${OSINT_WORKERS:-8}"
 STUB="${OSINT_STUB:-}"

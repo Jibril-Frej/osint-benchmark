@@ -537,11 +537,15 @@ def to_item(candidate: Candidate, question: str, asker: str, model: str) -> Item
             ),
         ],
         provenance={
+            # The candidate's own account first, and the default only if it did not give
+            # one: a type whose answer a model adjudicates says so, and writing the computed
+            # note over the top told 219 of 592 items that no model had chosen their gold
+            # when one had. A provenance field that is sometimes false is worse than absent.
+            "gold": "computed from the joint graph; no model wrote it",
             **candidate.provenance,
             "gold_qid": candidate.gold_qid,
             "asker": asker,
             "phraser": model,
-            "gold": "computed from the joint graph; no model wrote it",
         },
     )
 

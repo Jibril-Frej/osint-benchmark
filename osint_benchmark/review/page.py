@@ -34,6 +34,14 @@ article.drop { border-left: 5px solid #c62828; }
 .a { color: #14532d; margin-bottom: 10px; }
 .meta { font-size: 12px; color: #666; margin-bottom: 10px; }
 .prov { font-size: 12px; color: #666; margin-bottom: 10px; font-family: monospace; }
+.filters { position: sticky; top: 0; background: #fff; padding: 10px 0; z-index: 10;
+           border-bottom: 1px solid #ddd; margin-bottom: 16px; }
+.filters button { margin-right: 6px; padding: 5px 11px; border: 1px solid #bbb;
+                  background: #f6f6f6; border-radius: 3px; cursor: pointer; font-size: 13px; }
+.filters button.on { background: #2b6cb0; color: #fff; border-color: #2b6cb0; }
+.models { font-size: 12px; color: #555; background: #f7f7f7; border-left: 3px solid #bbb;
+          padding: 8px 12px; margin-bottom: 16px; }
+.models p { margin: 0 0 4px; }
 .flag { display: inline-block; padding: 1px 7px; border-radius: 3px; margin-right: 5px;
         font-size: 11px; border: 1px solid #ccc; }
 .bad { background: #fdecea; border-color: #f5c6c2; }
@@ -63,6 +71,24 @@ function paint() {
   }
   document.getElementById('counts').textContent =
     `${keep} kept, ${drop} dropped, ${items.length - keep - drop} undecided of ${items.length}`;
+}
+function showOnly(kind, button) {
+  const bar = document.querySelector('.filters');
+  if (kind === 'all') {
+    for (const b of bar.querySelectorAll('button')) b.classList.add('on');
+  } else {
+    bar.querySelector('[data-type="all"]').classList.remove('on');
+    button.classList.toggle('on');
+    if (!bar.querySelector('button.on')) button.classList.add('on');
+  }
+  const wanted = new Set();
+  for (const b of bar.querySelectorAll('button.on')) wanted.add(b.dataset.type);
+  for (const el of document.querySelectorAll('article')) {
+    el.style.display = wanted.has('all') || wanted.has(el.dataset.type) ? '' : 'none';
+  }
+}
+for (const b of document.querySelectorAll('.filters button')) {
+  b.addEventListener('click', () => showOnly(b.dataset.type, b));
 }
 function exportVerdicts() {
   const out = {};
@@ -133,7 +159,8 @@ def _article(item: Item, texts: dict[str, str]) -> str:
         if value is not None
     )
     ids = ", ".join(f"{e.side}:{e.doc_id}" for e in item.evidence)
-    return f"""<article id="{html.escape(item.item_id)}">
+    kind = html.escape(item.question_type)
+    return f"""<article id="{html.escape(item.item_id)}" data-type="{kind}">
   <div class="q">{html.escape(item.question)}</div>
   <div class="a">Answer: {html.escape(item.answer)}</div>
   <div class="meta">{html.escape(item.question_type)} &middot; {html.escape(ids)}</div>
@@ -150,7 +177,36 @@ def _article(item: Item, texts: dict[str, str]) -> str:
 </article>"""
 
 
-def render(items: Iterable[Item], texts: dict[str, str]) -> str:
+def _filters(items: list[Item]) -> str:
+    """Return the type filter bar, with a count beside each type."""
+    counts: dict[str, int] = {}
+    for item in items:
+        counts[item.question_type] = counts.get(item.question_type, 0) + 1
+    buttons = [f'<button class="on" data-type="all">all ({len(items)})</button>']
+    buttons += [
+        f'<button class="on" data-type="{html.escape(kind)}">{html.escape(kind)} ({count})</button>'
+        for kind, count in sorted(counts.items())
+    ]
+    return f'<div class="filters">{"".join(buttons)}</div>'
+
+
+def _models(note: str) -> str:
+    """Return what produced these questions, from the run's own provenance.
+
+    The item carries the phraser, because that is a fact about the item. Which model judged
+    it and which measured its necessity are facts about the *run*, recorded in the artefact's
+    provenance sidecar -- and a reviewer weighing a verdict needs to know whose verdict it
+    is, so the page says rather than leaving it a file away.
+    """
+    if not note:
+        return ""
+    return (
+        '<div class="models"><p><strong>How these were produced</strong></p>'
+        f"<p>{html.escape(note)}</p></div>"
+    )
+
+
+def render(items: Iterable[Item], texts: dict[str, str], note: str = "") -> str:
     """Return the whole review page as one self-contained HTML document."""
     listed = list(items)
     payload = json.dumps([{"item_id": i.item_id} for i in listed])
@@ -165,6 +221,8 @@ def render(items: Iterable[Item], texts: dict[str, str]) -> str:
   <button onclick="exportVerdicts()">Export verdicts</button>
 </header>
 <main>
+{_models(note)}
+{_filters(listed)}
 {body}
 </main>
 <script>{SCRIPT.replace("ITEMS", payload)}</script>

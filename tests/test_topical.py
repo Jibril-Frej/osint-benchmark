@@ -510,3 +510,40 @@ class TestPlaceClasses:
         from osint_benchmark.graph import entity_types
 
         assert entity_types.place_classes(["Q5"], lambda sparql: []) == set()
+
+
+class TestGoldProvenance:
+    """What an item says about where its answer came from has to be true."""
+
+    def test_an_adjudicated_type_says_a_model_chose_its_gold(self):
+        """219 of 592 items said the opposite, because the default overwrote the truth."""
+        pair = {
+            "private_id": "cablegate:1",
+            "public_id": "parliament:Business:9",
+            "private_date": "2005-03-01",
+            "public_date": "2005-04-01",
+            "public_title": "t",
+            "focused": True,
+        }
+        texts = {"cablegate:1": "a", "parliament:Business:9": "b"}
+        candidate = next(iter(typed.from_posture([pair], texts)))
+
+        item = typed.to_item(candidate, "Did it match?", "an analyst", "qwq")
+
+        assert item.provenance["gold"] == "adjudicated by the model that wrote the question"
+
+    def test_a_computed_type_still_says_no_model_wrote_it(self):
+        """The default is right for the types it was written for."""
+        candidate = typed.Candidate(
+            item_id="x",
+            question_type="association",
+            answer="Helvetic Society",
+            gold_qid="Q7",
+            private_id="cablegate:1",
+            public_id="enwiki:Q7",
+            passage="",
+        )
+
+        item = typed.to_item(candidate, "What body?", "an analyst", "qwq")
+
+        assert item.provenance["gold"].startswith("computed")

@@ -81,7 +81,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{len(chosen)} questions ({needs} the pipeline calls necessary) -> {output}")
         return 0
 
-    html = page.render(items, texts)
+    # The models that produced these are a fact about the run, recorded in the artefact's
+    # provenance sidecar rather than on each item. A reviewer weighing a necessity verdict
+    # needs to know whose verdict it is, so the page carries it rather than leaving it a
+    # file away.
+    sidecar = source.with_suffix(source.suffix + ".provenance.json")
+    note = ""
+    if sidecar.exists():
+        note = json.loads(sidecar.read_text(encoding="utf-8")).get("note", "")
+    html = page.render(items, texts, note)
     output = paths.data_dir() / "review.html"
     output.write_text(html, encoding="utf-8")
     print(f"{len(items)} questions -> {output}")

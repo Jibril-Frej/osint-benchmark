@@ -59,6 +59,14 @@ from osint_benchmark.sources import base, get_source, refs
 
 TYPES = ("association", "resolution", "chronology", "posture", "event")
 
+# What --types builds when it is not told. Chronology is absent by choice rather than by
+# oversight: reviewed at two scales, its questions ask how many days separated two events
+# that a reader cannot see as related, because the join pairs documents that share a subject
+# area and an entity rather than a subject. Its 100% necessity was never evidence against
+# that -- an ablation can tell that neither document alone yields the interval, and cannot
+# tell that the interval is about nothing. It is still buildable by naming it.
+DEFAULT_TYPES = ("association", "resolution", "posture", "event")
+
 # The two types built on the cable-parliament join rather than on the Wikidata slice.
 JOINED = ("chronology", "posture")
 
@@ -454,6 +462,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.draft and args.verify:
         raise SystemExit("--draft and --verify are the two passes; run them one at a time")
     wanted = tuple(name.strip() for name in (args.types or "").split(",") if name.strip())
+    if wanted == ("default",):
+        wanted = DEFAULT_TYPES
     if unknown := [name for name in wanted if name not in TYPES]:
         raise SystemExit(f"unknown question type {', '.join(unknown)}; known: {', '.join(TYPES)}")
     if wanted and (args.draft or args.verify):
