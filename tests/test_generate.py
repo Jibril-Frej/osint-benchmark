@@ -619,3 +619,70 @@ class TestSourcesForPairs:
         pairs = [{"private_id": "nonesuch:1", "public_id": "sanctions:2", "qid": "Q1"}]
 
         assert sources_for_pairs(pairs) == ["sanctions"]
+
+
+class TestPortedGates:
+    """The gates the previous project had and this one did not, each with its measurement."""
+
+    def _item(self, question, answer="Bloc Québécois"):
+        """Return an item asking the given question."""
+        from osint_benchmark.generate.item import Evidence, Item
+
+        return Item(
+            item_id="x",
+            question_type="event",
+            question=question,
+            answer=answer,
+            evidence=[
+                Evidence(doc_id="cablegate:1", source="cablegate", side="private"),
+                Evidence(doc_id="ucdp:9", source="ucdp", side="public"),
+            ],
+        )
+
+    def test_a_clause_of_chinese_is_a_generation_fault(self):
+        """QwQ drops into Chinese mid-sentence; three of 515 questions carried one."""
+        from osint_benchmark.generate import gates
+
+        item = self._item("Which body did they both join 并且 what happened?")
+
+        assert gates.run(item)["no_foreign_script"] is False
+
+    def test_french_and_german_accents_are_content(self):
+        """The corpora are German and French; Latin-1 is not a fault."""
+        from osint_benchmark.generate import gates
+
+        item = self._item("Which body did Genève and Zürich both belong to?")
+
+        assert gates.run(item)["no_foreign_script"] is True
+
+    def test_looser_source_attribution_is_caught_by_pattern(self):
+        """The literal list missed "as noted in diplomatic records"."""
+        from osint_benchmark.generate import gates
+
+        item = self._item("Which country was named in diplomatic records that season?")
+
+        assert gates.run(item)["not_referential"] is False
+
+    def test_naming_diplomacy_itself_is_not_attribution(self):
+        """A question is legitimately about a diplomatic exchange."""
+        from osint_benchmark.generate import gates
+
+        item = self._item("Did the diplomatic exchange on Iran change the position?")
+
+        assert gates.run(item)["not_referential"] is True
+
+    def test_a_verdict_answer_needs_a_polar_question(self):
+        """No exact-match label can grade "To what extent did ..."."""
+        from osint_benchmark.generate import gates
+
+        item = self._item("To what extent did the records agree?", answer="Mixed")
+
+        assert gates.run(item)["polar_when_the_answer_is_a_verdict"] is False
+
+    def test_a_named_answer_may_open_any_way(self):
+        """Which body... is right for every type that answers with a name."""
+        from osint_benchmark.generate import gates
+
+        item = self._item("Which body did they both belong to?", answer="Helvetic Society")
+
+        assert gates.run(item)["polar_when_the_answer_is_a_verdict"] is True

@@ -17,6 +17,11 @@ Each gate exists because something got through without it:
   its subjects is exempt, because there is then nothing to look the field off.
 * **answer_is_substantive** — a one-character or empty answer is a parsing failure wearing
   an answer's clothes.
+* **no_foreign_script** — QwQ drops into Chinese mid-sentence; three of 515 questions in one
+  run carried a clause of it.
+* **not_referential** — the looser form of source attribution, matched by pattern rather
+  than by phrase, because the literal list missed "as noted in diplomatic records".
+* **polar_when_the_answer_is_a_verdict** — a yes/no answer needs a question a yes settles.
 * **withholds_what_it_was_told_to** — some questions are only necessary because they
   describe their subjects instead of naming them. An association asks what two people both
   belong to, and a solver given their names can look the pair up in public sources without
@@ -86,7 +91,42 @@ SOURCE_ATTRIBUTION = (
     "in the source",
 )
 
+# The literal list above only catches a question that names the evidence outright. A
+# generator reaches for the same move in looser words -- "as described in US diplomatic
+# records" -- which points a solver at where to look just as squarely. Only source
+# ATTRIBUTION is caught, never any mention of diplomacy: "the diplomatic exchange on Iran"
+# names an event a question is legitimately about.
+REFERENTIAL = re.compile(
+    r"\b(?:(?:as\s+)?(?:described|noted|detailed|reported|recorded|mentioned|discussed|stated)"
+    r"\s+in\s+[\w\s.'\u2019-]{0,40}?(?:diplomatic|embassy|cable|dispatch|archive)"
+    r"|diplomatic\s+(?:record|archive)s?"
+    r"|embassy\s+(?:report|reporting|cable))",
+    re.I,
+)
+
+# QwQ is a Chinese-developed model and drops into Chinese mid-sentence -- the previous
+# project caught a question ending in a clause of Chinese after "Shah Deniz". German and
+# French accents are Latin-1 and stay welcome; a script the corpora never use is a
+# generation fault rather than content. Three of 515 questions carried one.
+FOREIGN_SCRIPT = re.compile(
+    r"[\u0400-\u04ff\u0590-\u05ff\u0600-\u06ff\u3000-\u30ff\u4e00-\u9fff\uff00-\uffef]"
+)
+
+# A four-way verdict answers a polar question. "To what extent did ..." is an essay prompt
+# no exact-match label can grade, so a verdict item must open with one of these.
+POLAR_OPENERS = frozenset(
+    {"did", "do", "does", "is", "was", "were", "are", "has", "have", "had",
+     "will", "would", "can", "could", "should"}
+)  # fmt: skip
+
+# Above this trigram overlap with an already-accepted question, it is the same question.
+MAX_DUPLICATE = 0.6
+
 MIN_ANSWER_CHARS = 2
+
+# The labels an adjudicated answer may take, so the polar check knows when it applies.
+VERDICTS = frozenset({"Yes", "No", "Mixed", "Not enough evidence"})
+
 _WORD = re.compile(r"[a-z0-9]+")
 
 Gate = Callable[[Item], bool]
@@ -152,6 +192,28 @@ def answer_is_substantive(item: Item) -> bool:
     return len(item.answer.strip()) >= MIN_ANSWER_CHARS
 
 
+def no_foreign_script(item: Item) -> bool:
+    """The question is in the language the corpora are written in."""
+    return FOREIGN_SCRIPT.search(item.question) is None
+
+
+def not_referential(item: Item) -> bool:
+    """The question does not attribute its content to the sources in looser words."""
+    return REFERENTIAL.search(item.question) is None
+
+
+def polar_when_the_answer_is_a_verdict(item: Item) -> bool:
+    """A yes/no/mixed answer needs a question a yes settles.
+
+    Only checked when the answer *is* one of the verdict labels: every other type answers
+    with a name or a number, and "Which body..." is right for those.
+    """
+    if item.answer not in VERDICTS:
+        return True
+    words = _words(item.question)
+    return bool(words) and words[0] in POLAR_OPENERS
+
+
 def withholds_what_it_was_told_to(item: Item) -> bool:
     """The question does not name the subjects it was built to describe instead.
 
@@ -178,6 +240,9 @@ GATES: dict[str, Gate] = {
     "not_a_bare_attribute": not_a_bare_attribute,
     "answer_is_substantive": answer_is_substantive,
     "withholds_what_it_was_told_to": withholds_what_it_was_told_to,
+    "no_foreign_script": no_foreign_script,
+    "not_referential": not_referential,
+    "polar_when_the_answer_is_a_verdict": polar_when_the_answer_is_a_verdict,
 }
 
 
