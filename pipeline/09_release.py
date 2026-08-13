@@ -14,6 +14,7 @@ this release's answers were written against.
 from __future__ import annotations
 
 import argparse
+import pathlib
 import tomllib
 
 from osint_benchmark import paths
@@ -43,15 +44,30 @@ def main(argv: list[str] | None = None) -> int:
             "hashing GDELT's 91.6M events takes minutes and a smoke run does not need it"
         ),
     )
+    parser.add_argument(
+        "--items",
+        type=pathlib.Path,
+        help=(
+            "freeze this items file instead of the newest of reviewed/measured/accepted. "
+            "For releasing a curated selection -- a stratified subset, one question type "
+            "-- without renaming it to reviewed.jsonl and claiming a review that did not "
+            "happen. The file's provenance sidecar says how it was drawn"
+        ),
+    )
     args = parser.parse_args(argv)
 
     items_dir = paths.data_dir() / "items"
-    for name in ("reviewed.jsonl", "measured.jsonl", "accepted.jsonl"):
-        source = items_dir / name
-        if source.exists():
-            break
+    if args.items:
+        source = args.items
+        if not source.exists():
+            raise SystemExit(f"no such items file: {source}")
     else:
-        raise SystemExit(f"no items in {items_dir}: run pipeline/06_generate.py first")
+        for name in ("reviewed.jsonl", "measured.jsonl", "accepted.jsonl"):
+            source = items_dir / name
+            if source.exists():
+                break
+        else:
+            raise SystemExit(f"no items in {items_dir}: run pipeline/06_generate.py first")
 
     items = load_items(source)
     corpora = {} if args.no_fingerprints else publish_fingerprints()
