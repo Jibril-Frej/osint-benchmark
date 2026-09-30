@@ -19,11 +19,13 @@ about serving infrastructure rather than about this file.
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Sequence
+from pathlib import Path
 
 from osint_benchmark.models.settings import Settings
 
@@ -82,37 +84,78 @@ def vllm(settings: Settings, timeout: float = 600.0) -> Complete:
 
     def complete(prompt: str) -> str:
         """Send one prompt and return the reply, reasoning stripped."""
-        payload = json.dumps(
-            {
-                "model": settings.model,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": settings.temperature,
-                "max_tokens": settings.max_tokens,
-            }
-        ).encode()
-        request = urllib.request.Request(
-            url, data=payload, headers={"Content-Type": "application/json"}
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
-                body = json.loads(response.read())
-        except urllib.error.HTTPError as exc:
-            # The reason is in the body, not the status line. Discarding it turns "your
-            # prompt is longer than the context window" into a bare 400.
-            detail = ""
-            try:
-                detail = exc.read().decode("utf-8", "replace")[:500]
-            except Exception:  # noqa: BLE001 - a body we cannot read is not a new failure
-                pass
-            raise ModelUnavailable(f"{url}: {exc} {detail}") from exc
-        except (urllib.error.URLError, OSError) as exc:
-            raise ModelUnavailable(f"{url}: {exc}") from exc
-        choices = body.get("choices") or []
-        if not choices:
-            return ""
-        return strip_reasoning(choices[0].get("message", {}).get("content") or "")
+        return _chat(url, settings, prompt, timeout)
 
     return complete
+
+
+def _chat(url: str, settings: Settings, content: str | list, timeout: float) -> str:
+    """Send one user turn to a chat endpoint and return the reply, reasoning stripped."""
+    payload = json.dumps(
+        {
+            "model": settings.model,
+            "messages": [{"role": "user", "content": content}],
+            "temperature": settings.temperature,
+            "max_tokens": settings.max_tokens,
+        }
+    ).encode()
+    request = urllib.request.Request(
+        url, data=payload, headers={"Content-Type": "application/json"}
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+            body = json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        # The reason is in the body, not the status line. Discarding it turns "your
+        # prompt is longer than the context window" into a bare 400.
+        detail = ""
+        try:
+            detail = exc.read().decode("utf-8", "replace")[:500]
+        except Exception:  # noqa: BLE001 - a body we cannot read is not a new failure
+            pass
+        raise ModelUnavailable(f"{url}: {exc} {detail}") from exc
+    except (urllib.error.URLError, OSError) as exc:
+        raise ModelUnavailable(f"{url}: {exc}") from exc
+    choices = body.get("choices") or []
+    if not choices:
+        return ""
+    return strip_reasoning(choices[0].get("message", {}).get("content") or "")
+
+
+# Prompt and page image in, completion out: the solver for a question asked over a scan.
+Look = Callable[[str, Path], str]
+
+
+def image_url(path: Path) -> str:
+    """Return a PNG as the ``data:`` URL the OpenAI chat API takes for an image."""
+    return "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode()
+
+
+def vllm_vision(settings: Settings, timeout: float = 600.0) -> Look:
+    """Return a :data:`Look` backed by a vision-language model served by vLLM.
+
+    The image goes in the same user turn as the prompt, as a ``data:`` URL, so the scan is
+    never written anywhere a server could fetch it from.
+
+    Raises:
+        ModelUnavailable: If the role has no endpoint configured.
+    """
+    if not settings.endpoint:
+        raise ModelUnavailable(
+            f"[{settings.role}] has no endpoint: serve {settings.model} with vLLM and set "
+            "it in config/models.toml, or export OSINT_MODEL_ENDPOINT"
+        )
+    url = f"{settings.endpoint.rstrip('/')}/v1/chat/completions"
+
+    def look(prompt: str, image: Path) -> str:
+        """Send one prompt with one image and return the reply."""
+        content = [
+            {"type": "image_url", "image_url": {"url": image_url(image)}},
+            {"type": "text", "text": prompt},
+        ]
+        return _chat(url, settings, content, timeout)
+
+    return look
 
 
 def agree(complete: Complete, prompt: str, samples: int, extract: Callable[[str], str]) -> str:

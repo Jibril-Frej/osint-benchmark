@@ -90,6 +90,8 @@ class Candidate:
             question, because whether a private position matches a public one cannot be
             settled before knowing what is being asked.
         provenance: How the candidate was arrived at, for a reviewer to check.
+        image: For a question asked over a page image, the scan's on-item form (see
+            :meth:`osint_benchmark.visual.scan.Scan.to_json`); empty for a text question.
     """
 
     item_id: str
@@ -104,6 +106,7 @@ class Candidate:
     facts: dict = field(default_factory=dict)
     verdicts: tuple[str, ...] = ()
     provenance: dict = field(default_factory=dict)
+    image: dict = field(default_factory=dict)
 
 
 def article_ref(qid: str) -> str:
@@ -547,6 +550,7 @@ def to_item(candidate: Candidate, question: str, asker: str, model: str) -> Item
             "asker": asker,
             "phraser": model,
         },
+        image=dict(candidate.image) or None,
     )
 
 

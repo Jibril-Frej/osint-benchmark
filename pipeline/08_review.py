@@ -89,7 +89,8 @@ def main(argv: list[str] | None = None) -> int:
     note = ""
     if sidecar.exists():
         note = json.loads(sidecar.read_text(encoding="utf-8")).get("note", "")
-    html = page.render(items, texts, note)
+    # Item image paths are relative to the item file; the page sits one directory up.
+    html = page.render(items, texts, note, image_base=f"{items_dir.name}/")
     output = paths.data_dir() / "review.html"
     output.write_text(html, encoding="utf-8")
     print(f"{len(items)} questions -> {output}")

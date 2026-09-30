@@ -49,6 +49,7 @@ article.drop { border-left: 5px solid #c62828; }
 .evidence { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 10px; }
 .evidence section { background: #fafafa; border: 1px solid #eee; border-radius: 5px;
                     padding: 10px; max-height: 260px; overflow: auto; }
+.scan { max-width: 100%; margin-bottom: 6px; border: 1px solid #ddd; }
 .evidence h3 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; color: #777; }
 pre { white-space: pre-wrap; font: 12px/1.5 ui-monospace, monospace; margin: 0; }
 .actions { margin-top: 12px; display: flex; gap: 8px; }
@@ -149,7 +150,19 @@ def _how(item: Item) -> str:
     return f'<div class="prov">{pairs}</div>'
 
 
-def _article(item: Item, texts: dict[str, str]) -> str:
+def _scan(item: Item, image_base: str) -> str:
+    """Return the page image a question is asked over, linked rather than inlined.
+
+    Linked because a hundred scans inlined as base64 make a page of hundreds of megabytes;
+    the review page is opened on the workstation beside ``data/``, where the files are.
+    """
+    if item.image is None:
+        return ""
+    src = html.escape(f"{image_base}{item.image.get('path', '')}")
+    return f'<a href="{src}"><img class="scan" src="{src}" alt="page scan"></a>'
+
+
+def _article(item: Item, texts: dict[str, str], image_base: str = "") -> str:
     """Return one question's block."""
     private = _cited(item.private_evidence, texts)
     public = _cited(item.public_evidence, texts)
@@ -160,6 +173,7 @@ def _article(item: Item, texts: dict[str, str]) -> str:
             ("closed-book", item.necessity.closed_book),
             ("public-only", item.necessity.public_only),
             ("private-only", item.necessity.private_only),
+            ("OCR-only", item.necessity.ocr_only),
         )
         if value is not None
     )
@@ -172,7 +186,8 @@ def _article(item: Item, texts: dict[str, str]) -> str:
   {_how(item)}
   <div>{gates}{necessity}</div>
   <div class="evidence">
-    <section><h3>Confidential</h3><pre>{html.escape(private) or "(not available)"}</pre></section>
+    <section><h3>Confidential</h3>{_scan(item, image_base)}
+      <pre>{html.escape(private) or "(not available)"}</pre></section>
     <section><h3>Public</h3><pre>{html.escape(public) or "(not available)"}</pre></section>
   </div>
   <div class="actions">
@@ -241,11 +256,17 @@ def _models(note: str) -> str:
     )
 
 
-def render(items: Iterable[Item], texts: dict[str, str], note: str = "") -> str:
-    """Return the whole review page as one self-contained HTML document."""
+def render(
+    items: Iterable[Item], texts: dict[str, str], note: str = "", image_base: str = ""
+) -> str:
+    """Return the whole review page as one HTML document.
+
+    Self-contained but for the page scans, which are linked at ``image_base`` followed by
+    the item's image path.
+    """
     listed = list(items)
     payload = json.dumps([{"item_id": i.item_id} for i in listed])
-    body = "\n".join(_article(item, texts) for item in listed)
+    body = "\n".join(_article(item, texts, image_base) for item in listed)
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <title>OSINT benchmark review</title><style>{STYLE}</style></head>

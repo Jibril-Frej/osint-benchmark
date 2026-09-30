@@ -61,6 +61,11 @@ class Necessity:
     closed_book: bool | None = None
     public_only: bool | None = None
     private_only: bool | None = None
+    # Only for a question asked over a page image: whether the page's OCR text, in place of
+    # the image, together with the public side, already answers it. True means the picture
+    # adds nothing a transcript does not, and the question is a text question with a
+    # picture attached. Not part of ``measured``: a text question has no image to replace.
+    ocr_only: bool | None = None
 
     @property
     def measured(self) -> bool:
@@ -87,6 +92,8 @@ class Item:
         necessity: The ablation outcomes, once measured.
         gates: Which computable checks it passed, and which it failed.
         provenance: How it was made -- models, prompts, revisions.
+        image: For a question asked over a page image, where the image is and its digest;
+            None for a text question.
     """
 
     item_id: str
@@ -98,6 +105,7 @@ class Item:
     necessity: Necessity = field(default_factory=Necessity)
     gates: dict[str, bool] = field(default_factory=dict)
     provenance: dict[str, str] = field(default_factory=dict)
+    image: dict | None = None
 
     @property
     def private_evidence(self) -> list[Evidence]:
@@ -125,4 +133,10 @@ class Item:
         record["evidence"] = [
             {**asdict(e), "offsets": list(e.offsets) if e.offsets else None} for e in self.evidence
         ]
+        # Absent rather than null on a text question, so the text types' files are
+        # byte-for-byte what they were before images existed and their fingerprints hold.
+        if self.image is None:
+            record.pop("image")
+        if self.necessity.ocr_only is None:
+            record["necessity"].pop("ocr_only")
         return record

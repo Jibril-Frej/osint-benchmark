@@ -45,6 +45,8 @@ def datasheet(items: list[Item], corpora: dict[str, dict]) -> dict:
             "answerable_closed_book": sum(1 for i in measured if i.necessity.closed_book),
             "answerable_public_only": sum(1 for i in measured if i.necessity.public_only),
             "answerable_private_only": sum(1 for i in measured if i.necessity.private_only),
+            # Only page-scan questions have this condition; counted over those alone.
+            "answerable_ocr_only": sum(1 for i in measured if i.necessity.ocr_only),
         },
         "gates": {
             name: sum(1 for i in items if i.gates.get(name))
@@ -53,7 +55,8 @@ def datasheet(items: list[Item], corpora: dict[str, dict]) -> dict:
         "corpora": corpora,
         "evidence": (
             "Carried as (doc_id, offsets). No corpus text is included; rebuild the corpora "
-            "from pins/ with pipeline/01_sources.py."
+            "from pins/ with pipeline/01_sources.py. A question asked over a page scan "
+            "carries the scan's path and SHA-256, not the image."
         ),
         "frozen_at": datetime.now(UTC).isoformat(timespec="seconds"),
     }

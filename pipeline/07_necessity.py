@@ -16,13 +16,15 @@ perfectly necessary.
 from __future__ import annotations
 
 import argparse
+import dataclasses
+import os
 import sys
 
 from osint_benchmark import paths
 from osint_benchmark.artifacts import Provenance, write_records
 from osint_benchmark.generate.evidence import evidence_texts, sources_for
 from osint_benchmark.models import settings, stub, transcript
-from osint_benchmark.models.backend import ModelUnavailable, vllm
+from osint_benchmark.models.backend import ModelUnavailable, vllm, vllm_vision
 from osint_benchmark.necessity import ablate
 from osint_benchmark.release.load import load_items
 
@@ -46,7 +48,27 @@ def main(argv: list[str] | None = None) -> int:
             "batching"
         ),
     )
+    parser.add_argument(
+        "--vision",
+        action="store_true",
+        help=(
+            "measure the private-only condition of page-scan questions on the image, with "
+            "the [vision_solver] model (served at OSINT_VISION_ENDPOINT or its configured "
+            "endpoint). Without it, that condition reads the page's OCR text instead"
+        ),
+    )
     args = parser.parse_args(argv)
+
+    look = None
+    if args.vision and not args.stub:
+        vision_settings = settings.load("vision_solver")
+        if endpoint := os.environ.get("OSINT_VISION_ENDPOINT"):
+            vision_settings = dataclasses.replace(vision_settings, endpoint=endpoint)
+        try:
+            look = vllm_vision(vision_settings)
+        except ModelUnavailable as exc:
+            print(exc, file=sys.stderr)
+            return 1
 
     solver_settings = settings.load("solver")
     judge_settings = settings.load("judge")
@@ -74,6 +96,13 @@ def main(argv: list[str] | None = None) -> int:
             f"Necessity measured by {solver_settings.model}: closed-book, public-only and "
             "private-only, each ablation answer checked against the gold answer. "
             "Recorded, never used to drop an item."
+        )
+        model_note += (
+            f" Page-scan questions: private-only measured on the image by "
+            f"{vision_settings.model}; OCR-only on the transcript beside the public record."
+            if look is not None
+            else " Page-scan questions: private-only measured on the page's OCR text, not "
+            "its image; OCR-only on the transcript beside the public record."
         )
 
     solver = transcript.transcribed(solver, "solver")
@@ -104,7 +133,14 @@ def main(argv: list[str] | None = None) -> int:
     print(f"evidence from: {', '.join(sources) or 'nothing cited'}")
     measured = list(
         ablate.measure_items(
-            items, evidence_texts(sources), solver, judge, samples, workers=args.workers
+            items,
+            evidence_texts(sources),
+            solver,
+            judge,
+            samples,
+            workers=args.workers,
+            look=look,
+            image_root=accepted.parent,
         )
     )
     output = paths.data_dir() / "items" / "measured.jsonl"

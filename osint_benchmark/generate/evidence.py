@@ -113,10 +113,13 @@ def evidence_texts(sources: list[str] | None = None) -> dict[str, str]:
         for row in read_jsonl(output):
             if rendered := record_text(row):
                 texts[refs.ref(name, row["doc_id"])] = rendered
-    articles = paths.data_dir() / "facts" / "articles.jsonl"
-    if articles.exists():
-        for row in read_jsonl(articles):
-            texts[row["doc_id"]] = row["text"]
+    # The article leads, and the rendered Wikidata records the page-scan questions rest on:
+    # one state's dated heads of government, one person's description and positions.
+    for name in ("articles", "records"):
+        facts = paths.data_dir() / "facts" / f"{name}.jsonl"
+        if facts.exists():
+            for row in read_jsonl(facts):
+                texts[row["doc_id"]] = row["text"]
     return texts
 
 

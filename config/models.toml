@@ -41,3 +41,14 @@ endpoint = ""
 temperature = 0.7
 max_tokens = 4096
 samples = 1
+
+[vision_solver]
+# Re-solves a question asked over a page scan, with the image in front of it. Only the
+# private-only ablation of those questions uses it: every other condition is text. The
+# same family the hybrid system's image strategies were run with, so the benchmark's
+# measurement and the system's evaluation look at a scan with comparable eyes.
+model = "Qwen/Qwen2.5-VL-7B-Instruct"
+endpoint = ""
+temperature = 0.7
+max_tokens = 1024
+samples = 1

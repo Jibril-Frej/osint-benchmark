@@ -26,6 +26,10 @@ Each gate exists because something got through without it:
   describe their subjects instead of naming them. An association asks what two people both
   belong to, and a solver given their names can look the pair up in public sources without
   the confidential document at all. The prompt says not to name them; this checks.
+* **image_is_bare_scan** — a page image carrying the archive's watermark or QR code names
+  its document, and a solver who can read the name can look up the archive's summary and
+  list of persons instead of reading the page. Only the scan raster, taken on its own, is
+  known to carry neither; an image that does not say it was made that way is refused.
 """
 
 from __future__ import annotations
@@ -233,6 +237,20 @@ def withholds_what_it_was_told_to(item: Item) -> bool:
     return True
 
 
+def image_is_bare_scan(item: Item) -> bool:
+    """A question asked over an image uses the bare scan, identified by its digest.
+
+    A text question has no image and passes. For the rest, ``bare`` is set only by
+    :func:`osint_benchmark.visual.scan.extract`, which never draws the archive's marks; the
+    digest is required so a release can show which bytes the question was asked over.
+    """
+    if item.image is None:
+        return True
+    return item.image.get("bare") is True and bool(
+        item.image.get("sha256") and item.image.get("path")
+    )
+
+
 GATES: dict[str, Gate] = {
     "two_sided": two_sided,
     "answer_not_in_question": answer_not_in_question,
@@ -243,6 +261,7 @@ GATES: dict[str, Gate] = {
     "no_foreign_script": no_foreign_script,
     "not_referential": not_referential,
     "polar_when_the_answer_is_a_verdict": polar_when_the_answer_is_a_verdict,
+    "image_is_bare_scan": image_is_bare_scan,
 }
 
 

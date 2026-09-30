@@ -99,7 +99,7 @@ because prompts carry corpus text and replies carry gold answers.
 
 ### Question types
 
-`06_generate.py` writes one type by default and two more on request.
+`06_generate.py` writes one type by default and more on request.
 
 | type | the answer | how it is arrived at |
 | --- | --- | --- |
@@ -120,6 +120,31 @@ continuously, so one request at a time leaves the GPUs mostly idle.
 
 They take no judge and no `--draft`/`--verify` pass: the answer is computed, so there is
 nothing for a model to have got wrong. The phraser is never shown it.
+
+#### Questions over a page scan
+
+Two more types are asked over the image of a Dodis letter's first page rather than over its
+text. Both need the Dodis PDFs, one `dodis-<id>.pdf` per document, in `OSINT_DODIS_SCANS`
+(default `~/dodis_scans`), and poppler's `pdfimages`/`pdfinfo` (`apt install
+poppler-utils`).
+
+| type | the answer | how it is arrived at |
+| --- | --- | --- |
+| `office_holder` | who headed the government of the country the letter was sent from, that day | the letterhead's country and the dateline, against Wikidata's dated heads of government |
+| `addressee` | the full name of the official the letter is addressed to | the address line's initials and family name, against the archive's people for the document, confirmed as one Swiss person on Wikidata |
+
+```bash
+uv run python pipeline/06_generate.py --types office_holder,addressee --per-type 100
+OSINT_VISION_ENDPOINT=http://127.0.0.1:8001 uv run python pipeline/07_necessity.py --vision
+```
+
+The scan is the page raster taken on its own, so the archive's watermark, QR code and logo,
+each of which names the document, are never in it. The PNGs are written under
+`data/items/images/`; the public records the questions rest on go to
+`data/facts/records.jsonl`. Step 7 adds a fourth condition for these items, `ocr_only`:
+the page's transcript in place of its image, beside the public record. With `--vision`, the
+private-only condition shows the image to the `[vision_solver]` model; without it, that
+condition reads the transcript, and the run's provenance note says which.
 
 On Slurm, one job does the lot: clone, install, serve, run, tear down.
 

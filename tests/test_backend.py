@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from osint_benchmark.models.backend import ModelUnavailable, vllm
+from osint_benchmark.models.backend import ModelUnavailable, image_url, vllm, vllm_vision
 from osint_benchmark.models.settings import Settings
 
 
@@ -124,3 +124,35 @@ class TestVllm:
 
         with pytest.raises(ModelUnavailable, match="no endpoint"):
             vllm(settings)
+
+
+class TestVllmVision:
+    """A prompt and a page image in one user turn."""
+
+    def test_the_image_travels_inline_beside_the_prompt(self, server, tmp_path):
+        """As a data URL, so no server ever fetches the scan from anywhere."""
+        page = tmp_path / "p.png"
+        page.write_bytes(b"\x89PNG")
+        server.content = "Alfred Zehnder"
+
+        reply = vllm_vision(_settings(server, role="vision_solver"))("who?", page)
+
+        (image, text) = server.requests[0]["body"]["messages"][0]["content"]
+        assert reply == "Alfred Zehnder"
+        assert image == {"type": "image_url", "image_url": {"url": image_url(page)}}
+        assert image_url(page) == "data:image/png;base64,iVBORw=="
+        assert text == {"type": "text", "text": "who?"}
+
+    def test_no_endpoint_fails_before_any_work(self):
+        """Same as the text client."""
+        settings = Settings(
+            role="vision_solver",
+            model="m",
+            endpoint="",
+            temperature=0.7,
+            max_tokens=10,
+            samples=1,
+        )
+
+        with pytest.raises(ModelUnavailable, match="no endpoint"):
+            vllm_vision(settings)

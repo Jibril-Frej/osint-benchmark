@@ -36,6 +36,7 @@ def load_items(path: Path) -> list[Item]:
                 necessity=Necessity(**(row.get("necessity") or {})),
                 gates=row.get("gates", {}),
                 provenance=row.get("provenance", {}),
+                image=row.get("image"),
             )
         )
     return items

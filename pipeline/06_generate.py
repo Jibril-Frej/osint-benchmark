@@ -31,6 +31,7 @@ import argparse
 import random
 import sys
 from collections import Counter
+from itertools import islice
 
 from osint_benchmark import paths
 from osint_benchmark.artifacts import Provenance, read_jsonl, write_records
@@ -42,6 +43,7 @@ from osint_benchmark.generate import (
     phrase,
     resolution,
     typed,
+    visual,
 )
 from osint_benchmark.generate.evidence import (
     entity_labels,
@@ -51,13 +53,30 @@ from osint_benchmark.generate.evidence import (
     sources_for_pairs,
 )
 from osint_benchmark.graph import entity_types
+from osint_benchmark.link import reconcile
 from osint_benchmark.models import settings, stub, transcript
 from osint_benchmark.models.backend import ModelUnavailable, vllm
 from osint_benchmark.pair import topical
+from osint_benchmark.public import offices
 from osint_benchmark.release.load import load_items
 from osint_benchmark.sources import base, get_source, refs
+from osint_benchmark.visual import scan
 
-TYPES = ("association", "resolution", "chronology", "posture", "event")
+TYPES = (
+    "association",
+    "resolution",
+    "chronology",
+    "posture",
+    "event",
+    "office_holder",
+    "addressee",
+)
+
+# The types asked over a Dodis page scan rather than over text. Built from the Dodis records,
+# the PDFs under OSINT_DODIS_SCANS and live Wikidata lookups, and none of the link files,
+# so they do not need steps 2-5 -- and are not in the default set, because they need the
+# scans, which most checkouts do not have.
+VISUAL = ("office_holder", "addressee")
 
 # What --types builds when it is not told. Chronology is absent by choice rather than by
 # oversight: reviewed at two scales, its questions ask how many days separated two events
@@ -346,6 +365,106 @@ def typed_candidates(
     return candidates
 
 
+def visual_candidates(
+    wanted: tuple[str, ...],
+    per_type: int,
+    seed: int,
+    outcomes: Counter,
+) -> list[typed.Candidate]:
+    """Return the page-scan candidates, with their scans cut and their public records written.
+
+    Only documents whose PDF is present are considered, so a partial copy of the scans gives
+    a smaller set rather than a run of "no scan" drops. Each type stops once it has
+    ``per_type``: a scan is cut only for a letter that has passed every other condition, and
+    only until the type is full.
+    """
+    output = base.output_path(get_source("dodis"))
+    if not output.exists():
+        raise SystemExit(f"{output} is missing: run pipeline/01_sources.py --only dodis")
+    documents = [row for row in read_jsonl(output) if scan.pdf_for(str(row["doc_id"])).exists()]
+    random.Random(seed).shuffle(documents)
+    print(f"{len(documents)} Dodis documents with a PDF under {scan.scans_dir()}")
+
+    items_dir = paths.data_dir() / "items"
+    images = items_dir / "images"
+    cut: dict[str, dict] = {}
+
+    def scanner(doc_id: str) -> dict:
+        """Cut one document's page-one scan, once however many types ask for it."""
+        if doc_id not in cut:
+            taken = scan.extract(scan.pdf_for(doc_id), images / f"dodis-{doc_id}-p1.png")
+            cut[doc_id] = taken.to_json(relative_to=items_dir)
+        return cut[doc_id]
+
+    candidates: list[typed.Candidate] = []
+    records: list[dict] = []
+    if "office_holder" in wanted:
+        countries = offices.governed()
+        places = offices.gazetteer(countries)
+        terms: dict[str, list[offices.Term]] = {}
+        for term in offices.terms(countries):
+            terms.setdefault(term.country, []).append(term)
+        country_labels = offices.english_labels(countries)
+        print(f"office_holder: {len(countries)} states, {len(places)} place names")
+        kept = list(
+            islice(
+                visual.from_office_holder(
+                    documents, places, terms, country_labels, scanner, outcomes
+                ),
+                per_type,
+            )
+        )
+        print(f"office_holder: {len(kept)} candidates")
+        for country in sorted({c.provenance["country_qid"] for c in kept}):
+            records.append(
+                {
+                    "doc_id": refs.ref(visual.OFFICES, country),
+                    "text": offices.render_terms(country_labels[country], terms[country]),
+                }
+            )
+        candidates += kept
+    if "addressee" in wanted:
+        # Only the names some letter could actually be addressed to go to Wikidata: the
+        # archive's full names, never anything read from the letter itself.
+        names = {full for d in documents for _, full, why in [visual.addressed_to(d)] if not why}
+        swiss = offices.swiss_people(sorted(names))
+        unique = sorted(qids[0] for qids in swiss.values() if len(qids) == 1)
+        people = offices.person_records(unique)
+        print(f"addressee: {len(names)} names to resolve, {len(unique)} one Swiss person")
+        kept = list(
+            islice(visual.from_addressee(documents, swiss, people, scanner, outcomes), per_type)
+        )
+        print(f"addressee: {len(kept)} candidates")
+        for qid in sorted({c.gold_qid for c in kept}):
+            records.append(
+                {
+                    "doc_id": refs.ref(visual.PEOPLE, qid),
+                    "text": offices.render_person(people[qid]),
+                }
+            )
+        candidates += kept
+    write_records(
+        paths.data_dir() / "facts" / "records.jsonl",
+        records,
+        Provenance(
+            source=f"Wikidata via {reconcile.DEFAULT_ENDPOINT}",
+            source_fields=("P6", "P580", "P582", "P39", "P569", "label", "description"),
+            kept={
+                "P6": "the heads of government listed",
+                "P580": "term start",
+                "P582": "term end",
+                "P39": "positions held",
+                "P569": "year of birth",
+                "label": "names",
+                "description": "the person's one-line description",
+            },
+            kind="derived",
+            note="The public evidence of the page-scan questions, rendered as text.",
+        ),
+    )
+    return candidates
+
+
 def run_typed(args: argparse.Namespace, wanted: tuple[str, ...]) -> int:
     """Build, phrase, gate and write the typed questions; return a process exit code."""
     phraser_settings = settings.load("phraser")
@@ -366,7 +485,12 @@ def run_typed(args: argparse.Namespace, wanted: tuple[str, ...]) -> int:
         )
 
     outcomes: Counter = Counter()
-    candidates = typed_candidates(wanted, args.per_type, args.seed, outcomes)
+    text_types = tuple(name for name in wanted if name not in VISUAL)
+    candidates = (
+        typed_candidates(text_types, args.per_type, args.seed, outcomes) if text_types else []
+    )
+    if set(wanted) & set(VISUAL):
+        candidates += visual_candidates(wanted, args.per_type, args.seed, outcomes)
     print(f"{len(candidates)} candidates to phrase: {dict(outcomes)}")
     if not candidates:
         print("no candidates: nothing to phrase", file=sys.stderr)
