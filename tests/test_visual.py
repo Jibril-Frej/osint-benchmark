@@ -403,6 +403,13 @@ class TestOfficeHolder:
         assert built == []
         assert outcomes == Counter({reason: 1})
 
+    def test_one_holder_answers_at_most_per_answer_questions(self):
+        """Three letters from Vienna in Figl's term give two questions, not three."""
+        built, outcomes = _offices([_document()] * 3)
+
+        assert len(built) == visual.PER_ANSWER == 2
+        assert outcomes == Counter(candidate=2, answer_repeated=1)
+
     def test_the_same_holder_recorded_twice_is_not_ambiguous(self):
         """Two overlapping statements naming one person still name one person."""
         (candidate,), _ = _offices([_document()], terms={"Q40": [FIGL, FIGL]})
@@ -465,6 +472,17 @@ class TestAddressee:
 
         assert built == []
         assert outcomes == Counter({reason: 1})
+
+
+class TestAddresseeCap:
+    """The head of the Political Department received most letters."""
+
+    def test_one_addressee_answers_at_most_per_answer_questions(self):
+        """The rest are counted, not silently lost."""
+        built, outcomes = _addressees([_document()] * 4)
+
+        assert len(built) == 2
+        assert outcomes == Counter(candidate=2, answer_repeated=2)
 
 
 class TestNamesOnScan:

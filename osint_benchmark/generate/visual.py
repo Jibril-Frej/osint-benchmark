@@ -51,6 +51,11 @@ OFFICES = "offices"
 # The public record of an addressee question: one person's Wikidata description.
 PEOPLE = "people"
 
+# How many questions one gold answer may have. Most letters to Bern went to the head of the
+# Political Department, so an uncapped run of five addressee questions answered "Max
+# Petitpierre" five times -- a set a solver can score on by guessing him.
+PER_ANSWER = 2
+
 
 def display_name(person: str) -> str:
     """Return an archive name in reading order: "Petitpierre, Max" becomes "Max Petitpierre"."""
@@ -109,6 +114,7 @@ def from_office_holder(
     country_labels: dict[str, str],
     scanner: Scanner,
     outcomes: Counter | None = None,
+    per_answer: int = PER_ANSWER,
 ) -> Iterator[Candidate]:
     """Yield an office-holder candidate per letter whose host country and day are certain.
 
@@ -120,10 +126,12 @@ def from_office_holder(
     * the archive dates it to less than a day;
     * the letterhead names no country, or more than one;
     * no recorded term covers the day, or two do -- a handover day, or overlapping records;
-    * the letter names the head of government itself, so the public record adds nothing.
+    * the letter names the head of government itself, so the public record adds nothing;
+    * that head of government already answers ``per_answer`` questions.
     """
     if outcomes is None:
         outcomes = Counter()
+    given: Counter = Counter()
     for document in documents:
         reference, page, provenance = _common(document)
         head = letter.letterhead(page)
@@ -148,9 +156,13 @@ def from_office_holder(
         if names(document.get("text", ""), term.label):
             outcomes["gold_named_privately"] += 1
             continue
+        if given[term.holder] >= per_answer:
+            outcomes["answer_repeated"] += 1
+            continue
         image = _scan(str(document["doc_id"]), scanner, outcomes)
         if image is None:
             continue
+        given[term.holder] += 1
         outcomes["candidate"] += 1
         country_label = country_labels.get(country, "")
         yield Candidate(
@@ -216,6 +228,7 @@ def from_addressee(
     records: dict[str, dict],
     scanner: Scanner,
     outcomes: Counter | None = None,
+    per_answer: int = PER_ANSWER,
 ) -> Iterator[Candidate]:
     """Yield an addressee candidate per letter whose addressee resolves to one person.
 
@@ -228,10 +241,12 @@ def from_addressee(
     * none, or more than one, of the archive's people for the document fits the family name
       and initials;
     * the letter spells that full name out anywhere;
-    * Wikidata has no Swiss person of that name, or several, or no record to show.
+    * Wikidata has no Swiss person of that name, or several, or no record to show;
+    * that person already answers ``per_answer`` questions.
     """
     if outcomes is None:
         outcomes = Counter()
+    given: Counter = Counter()
     for document in documents:
         reference, page, provenance = _common(document)
         who, full, reason = addressed_to(document, page)
@@ -247,9 +262,13 @@ def from_addressee(
         if not record:
             outcomes["no_public_record"] += 1
             continue
+        if given[qid] >= per_answer:
+            outcomes["answer_repeated"] += 1
+            continue
         image = _scan(str(document["doc_id"]), scanner, outcomes)
         if image is None:
             continue
+        given[qid] += 1
         outcomes["candidate"] += 1
         yield Candidate(
             item_id=f"{reference}|addressee|{qid}",
