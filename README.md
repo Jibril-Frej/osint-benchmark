@@ -154,6 +154,7 @@ sbatch --partition=<p> --qos=<q> --gpus=<type> cluster/smoke_gpu.sbatch  # a rea
 sbatch --partition=<p> --qos=<q> --gpus=a100:2 cluster/generate.sbatch   # corpora to questions
 sbatch --partition=<p> --qos=<q> --gpus=a100:2 cluster/typed.sbatch      # the typed questions
 sbatch --partition=<p> --qos=<q> --gpus=<type> cluster/parliament.sbatch # link German and French
+sbatch --partition=<p> --qos=<q> --gpus=h200:2 cluster/scan.sbatch       # the page-scan questions
 ```
 
 `typed.sbatch` copies each stage's output to `$HOME`. Pass `OSINT_LINKS` and `OSINT_FACTS`
@@ -164,6 +165,10 @@ half of network with the GPUs doing nothing, and it produces the same files ever
 phraser is torn down — a judge from the phraser's own family is scoring its own output, and
 two 30B models do not fit on two A100s together. `OSINT_PAIRS` reuses a saved pair set and
 skips linking, which turns a prompt experiment from five hours into two.
+
+`scan.sbatch` serves QwQ-32B and Qwen2.5-VL-7B together, on [`config/scan/`](config/scan/):
+the vision model on the last GPU, QwQ on the rest. `--gpus=a100:3` also works; two A100s do
+not. Point `OSINT_DODIS_SCANS` at the PDFs.
 
 `parliament.sbatch` asks for 200 GB of memory: mGENRE's (language, title) → QID mapping is
 3.7 GB on disk and roughly 90 GB loaded.
