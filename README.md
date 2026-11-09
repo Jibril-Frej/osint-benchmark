@@ -255,3 +255,9 @@ derived), `OSINT_RAW`, `OSINT_DOCS`, `OSINT_PINS`.
 | `cluster/` | Slurm jobs |
 | `tests/` | `uv run pytest -q` |
 | `docs/` | why the pipeline is shaped this way |
+
+## License
+
+This repository, including the released questions and answers under `releases/`, is
+licensed under the [Creative Commons Attribution 4.0 International License](LICENSE)
+(CC BY 4.0). The corpora are not part of it: each stays under the terms of its own source.
