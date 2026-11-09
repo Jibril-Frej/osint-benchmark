@@ -258,6 +258,7 @@ derived), `OSINT_RAW`, `OSINT_DOCS`, `OSINT_PINS`.
 
 ## License
 
-This repository, including the released questions and answers under `releases/`, is
-licensed under the [Creative Commons Attribution 4.0 International License](LICENSE)
-(CC BY 4.0). The corpora are not part of it: each stays under the terms of its own source.
+The code is licensed under the [MIT License](LICENSE). The released questions and answers
+under `releases/` are licensed under the
+[Creative Commons Attribution 4.0 International License](LICENSE-DATA) (CC BY 4.0). The
+corpora are not part of this repository: each stays under the terms of its own source.
